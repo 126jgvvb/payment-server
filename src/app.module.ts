@@ -55,7 +55,7 @@ import { DashboardController } from './controllers/dashboard.controller';
 
     ConfigModule.forRoot({ 
       isGlobal: true,
-      envFilePath: './src/.env'
+      envFilePath: '.env'
     }),
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
