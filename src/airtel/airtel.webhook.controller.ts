@@ -66,9 +66,9 @@ export class AirtelWebhookController {
     @Req() req: any,
     @Headers('x-signature') signature: string,
   ) {
-    // ✅ Verify signature if provided
-    // ✅ Idempotency check
-    // ✅ Update transaction status in DB
+    // Verify signature if provided
+    //  Idempotency check
+    //  Update transaction status in DB
 
     if (!this.verifySignature(req.rawBody, signature)) {
       throw new ForbiddenException();

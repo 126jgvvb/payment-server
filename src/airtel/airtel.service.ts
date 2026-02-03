@@ -20,33 +20,44 @@ export class AirtelService {
 
   // 🔐 Token Management
   private async getAccessToken(): Promise<string> {
+    // In-memory cache
     if (this.accessToken && Date.now() < this.tokenExpiry) {
       return this.accessToken;
     }
-
+  
+    const body = new URLSearchParams({
+      client_id: process.env.AIRTEL_CLIENT_ID!,
+      client_secret: process.env.AIRTEL_CLIENT_SECRET!,
+      grant_type: 'client_credentials',
+    });
+  
     const response = await firstValueFrom(
       this.http.post(
         `${process.env.AIRTEL_BASE_URL}/auth/oauth2/token`,
+        body.toString(),
         {
-          client_id: process.env.AIRTEL_CLIENT_ID,
-          client_secret: process.env.AIRTEL_CLIENT_SECRET,
-          grant_type: 'client_credentials',
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: '*/*',
+          },
         },
-        { headers: { Accept: 'application/json' } },
       ),
     );
-
-    this.accessToken = response.data.access_token;
-    this.tokenExpiry = Date.now() + response.data.expires_in * 1000;
-
+  
+    const { access_token, expires_in } = response.data;
+  
+    this.accessToken = access_token;
+    this.tokenExpiry = Date.now() + expires_in * 1000;
+  
+    // Redis cache (slightly shorter TTL for safety)
     await this.redis.set(
       'airtel_access_token',
-      response.data.access_token,
+      access_token,
       'EX',
-      response.data.expires_in - 60,
+      expires_in - 60,
     );
-
-    return this.accessToken;
+  
+    return access_token;
   }
 
   //airtel->mtn fallback
