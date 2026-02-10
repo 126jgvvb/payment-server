@@ -76,10 +76,10 @@ export class AirtelService {
 
   // 💰 COLLECTION
   async collectMoney(dto: {
-    phone: string;
-    amount: number;
-    reference: string;
-    reSellerPhoneNumber?: string;
+    phoneNumber: string;
+    selectedPrice: number;
+    reference?: string;
+    reSellerPhoneNumber: string;
   }) {
     
     await this.redis.set(`cached-voucher:`,'zero'); 
