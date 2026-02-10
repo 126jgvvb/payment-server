@@ -17,7 +17,7 @@ async function bootstrap() {
 
   // Enable CORS
   app.enableCors({
-    origin: ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:5175', 'http://localhost:5176'],
+    origin: ['http://localhost:5173', 'https://payment-server-production-9b18.up.railway.app'],
     credentials: true,
   });
 
