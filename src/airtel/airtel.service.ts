@@ -62,15 +62,15 @@ export class AirtelService {
 
   //airtel->mtn fallback
   async collectFunds(dto: {
-    phone: string;
-    amount: number;
-    reference: string;
-    reSellerPhoneNumber?: string;
+    phoneNumber: string;
+    selectedPrice: number;
+    reference?: string;
+    reSellerPhoneNumber: string;
   }) {
     try {
       return await this.collectMoney(dto);
     } catch (e) {
-      return this.mtnService.collect(dto);
+      return this.mtnService.collect({phone:dto.phoneNumber,reference:dto.reference,amount:dto.selectedPrice});
     }
   }
 
@@ -98,10 +98,10 @@ export class AirtelService {
           subscriber: {
             country: process.env.AIRTEL_COUNTRY,
             currency: process.env.AIRTEL_CURRENCY,
-            msisdn: dto.phone,
+            msisdn: dto.phoneNumber,
           },
           transaction: {
-            amount: dto.amount,
+            amount: dto.selectedPrice,
             country: process.env.AIRTEL_COUNTRY,
             currency: process.env.AIRTEL_CURRENCY,
             id: dto.reference,

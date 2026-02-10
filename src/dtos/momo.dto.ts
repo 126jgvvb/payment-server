@@ -1,7 +1,7 @@
 export class MomoCollectDto {
   phone: string;
   amount: number;
-  reference: string;
+  reference?: string;
 }
 
 export class MomoPayoutDto {
