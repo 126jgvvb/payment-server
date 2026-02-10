@@ -12,12 +12,15 @@ export class JWTService{
 
         const token = jwt.sign(payload, this.secret, { expiresIn: this.expiresIn });
         return { accessToken: token };
-}
+    }
 
+    generateToken(payload: any) {
+        return jwt.sign(payload, this.secret, { expiresIn: this.expiresIn });
+    }
     
     verifyToken(token: string) {
         try {
-            return jwt.verify(token, this.secret) || true;
+            return jwt.verify(token, this.secret);
         }
         catch (e) {
             console.log('Error in token: ' + e);

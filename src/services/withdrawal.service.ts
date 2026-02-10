@@ -73,4 +73,13 @@ export class WithdrawalService {
     withdrawal.status = status;
     return this.withdrawalRepository.save(withdrawal);
   }
+
+  /**
+   * Gets withdrawals by user ID
+   * @param userId - User ID
+   * @returns Promise<WithdrawalEntity[]>
+   */
+  async getWithdrawalsByUserId(userId: string): Promise<WithdrawalEntity[]> {
+    return this.withdrawalRepository.findByUserId(userId);
+  }
 }

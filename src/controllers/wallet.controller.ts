@@ -3,6 +3,7 @@ import {
   Post,
   Get,
   Put,
+  Delete,
   Param,
   Body,
   HttpCode,
@@ -97,5 +98,57 @@ export class WalletController {
     @Body() updateWalletBalanceDto: UpdateWalletBalanceDto,
   ): Promise<WalletEntity> {
     return this.walletService.updateBalance(id, updateWalletBalanceDto.amount);
+  }
+
+  /**
+   * Deletes a wallet
+   * @param id - UUID of the wallet to delete
+   * @returns Promise<void>
+   */
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteWallet(@Param('id') id: string): Promise<void> {
+    return this.walletService.deleteWallet(id);
+  }
+
+  /**
+   * Freezes a wallet
+   * @param id - UUID of the wallet to freeze
+   * @returns Promise<WalletEntity>
+   */
+  @Put(':id/freeze')
+  @HttpCode(HttpStatus.OK)
+  async freezeWallet(@Param('id') id: string): Promise<WalletEntity> {
+    return this.walletService.freezeWallet(id);
+  }
+
+  /**
+   * Unfreezes a wallet
+   * @param id - UUID of the wallet to unfreeze
+   * @returns Promise<WalletEntity>
+   */
+  @Put(':id/unfreeze')
+  @HttpCode(HttpStatus.OK)
+  async unfreezeWallet(@Param('id') id: string): Promise<WalletEntity> {
+    return this.walletService.unfreezeWallet(id);
+  }
+
+  /**
+   * Transfers funds between wallets
+   * @param fromWalletId - UUID of the source wallet
+   * @param toWalletId - UUID of the destination wallet
+   * @param body - Transfer details
+   * @returns Promise<{ fromWallet: WalletEntity; toWallet: WalletEntity }>
+   */
+  @Post('transfer')
+  @HttpCode(HttpStatus.OK)
+  async transferFunds(
+    @Body() body: { fromWalletId: string; toWalletId: string; amount: number },
+  ): Promise<{ fromWallet: WalletEntity; toWallet: WalletEntity }> {
+    return this.walletService.transferFunds(
+      body.fromWalletId,
+      body.toWalletId,
+      body.amount,
+    );
   }
 }

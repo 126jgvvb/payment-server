@@ -37,8 +37,8 @@ export class AirtelService {
         body.toString(),
         {
           headers: {
-            'Content-Type': 'application/json',
-            Accept: '*/*',
+            'Content-Type': 'application/x-www-form-urlencoded',
+            Accept: 'application/json',
           },
         },
       ),
@@ -81,6 +81,8 @@ export class AirtelService {
     reference: string;
     reSellerPhoneNumber?: string;
   }) {
+    
+    await this.redis.set(`cached-voucher:`,'zero'); 
     const token = await this.getAccessToken();
 
     // Store reSellerPhoneNumber in Redis cache with transaction reference as key
@@ -88,9 +90,9 @@ export class AirtelService {
       await this.redis.set(`transaction:${dto.reference}:phone`, dto.reSellerPhoneNumber, 'EX', 86400); // 24 hour expiry
     }
 
-    return firstValueFrom(
+    const result1= firstValueFrom(
       this.http.post(
-        `${process.env.AIRTEL_BASE_URL}/merchant/v1/payments/`,
+        `${process.env.AIRTEL_BASE_URL}/merchant/v2/payments/`,
         {
           reference: dto.reference,
           subscriber: {
@@ -110,10 +112,24 @@ export class AirtelService {
             Authorization: `Bearer ${token}`,
             'X-Country': process.env.AIRTEL_COUNTRY,
             'X-Currency': process.env.AIRTEL_CURRENCY,
+            'X-signature':'',
+            'X-key':'',
+            'Accept':'*/*'
           },
         },
       ),
     );
+
+//waiting for a value to be dropped in cache
+while(await this.redis.get(`cached-voucher`)=='zero'){
+console.log('waiting for a vocuher...');
+}
+
+console.log('voucher obtained...continuing');
+const result2=await this.redis.get('cached-voucher');
+await this.redis.set(`cached-voucher`,'zero'); 
+
+return {result:result1,code:result2};
   }
 
   // 💸 DISBURSEMENT
@@ -132,7 +148,7 @@ export class AirtelService {
 
     return firstValueFrom(
       this.http.post(
-        `${process.env.AIRTEL_BASE_URL}/standard/v1/disbursements/`,
+        `${process.env.AIRTEL_BASE_URL}/standard/v2/disbursements/`,
         {
           reference: dto.reference,
           payee: {
@@ -150,6 +166,10 @@ export class AirtelService {
             Authorization: `Bearer ${token}`,
             'X-Country': process.env.AIRTEL_COUNTRY,
             'X-Currency': process.env.AIRTEL_CURRENCY,
+            "Content-Type":"application/json",
+            "Accept":"*/*",
+            'X-signature':'',
+            'X-key':''
           },
         },
       ),
@@ -162,15 +182,46 @@ export class AirtelService {
 
     return firstValueFrom(
       this.http.get(
-        `${process.env.AIRTEL_BASE_URL}/standard/v1/payments/${transactionId}`,
+        `${process.env.AIRTEL_BASE_URL}/standard/v2/payments/${transactionId}`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
             'X-Country': process.env.AIRTEL_COUNTRY,
             'X-Currency': process.env.AIRTEL_CURRENCY,
+           'X-signature':'',
+            'X-key':''
           },
         },
       ),
     );
+  }
+
+
+
+  // Method to retrieve all transactions
+  public async getAllTransactions(params?: {
+    limit?: number;
+    offset?: number;
+  }): Promise<any[]> {
+    const token = await this.getAccessToken();
+
+    const response = await firstValueFrom(
+      this.http.get(`${process.env.AIRTEL_BASE_URL}/merchant/v1/transactions`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/json',
+        },
+        params: {
+          limit: params?.limit || 100, // optional, depends on the API
+          offset: params?.offset || 0,  // pagination if supported
+        },
+      }),
+    );
+
+    if (response.data && response.data.transactions) {
+      return response.data.transactions;
+    }
+
+    return [];
   }
 }

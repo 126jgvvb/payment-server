@@ -30,12 +30,14 @@ import { WalletEntity } from './entities/wallet.entity';
 import { PaymentEntity } from './entities/payment.entity';
 import { WithdrawalEntity } from './entities/withdrawal.entity';
 import { WebhookLogEntity } from './entities/webhook-log.entity';
+import { UserEntity } from './entities/user.entity';
 import { TransactionRepository } from './repositories/transaction.repository';
 import { LedgerRepository } from './repositories/ledger.repository';
 import { WalletRepository } from './repositories/wallet.repository';
 import { PaymentRepository } from './repositories/payment.repository';
 import { WithdrawalRepository } from './repositories/withdrawal.repository';
 import { WebhookLogRepository } from './repositories/webhook-log.repository';
+import { UserRepository } from './repositories/user.repository';
 import { WalletService } from './services/wallet.service';
 import { PaymentService } from './services/payment.service';
 import { WithdrawalService } from './services/withdrawal.service';
@@ -45,6 +47,9 @@ import { PaymentController } from './controllers/payment.controller';
 import { WithdrawalController } from './controllers/withdrawal.controller';
 import { WebhookLogController } from './controllers/webhook-log.controller';
 import { DashboardController } from './controllers/dashboard.controller';
+import { UsersController } from './controllers/users.controller';
+import { UserService } from './services/user.service';
+import { ExternalApiService } from './services/external-api/external-api.service';
 
 @Module({
   imports: [
@@ -81,6 +86,7 @@ import { DashboardController } from './controllers/dashboard.controller';
           PaymentEntity,
           WithdrawalEntity,
           WebhookLogEntity,
+          UserEntity,
         ],
         synchronize: true, // Set to false in production
         logging: true,
@@ -93,6 +99,7 @@ import { DashboardController } from './controllers/dashboard.controller';
       PaymentEntity,
       WithdrawalEntity,
       WebhookLogEntity,
+      UserEntity,
     ]),
     MailerModule.forRootAsync({
       imports: [ConfigModule],
@@ -144,6 +151,7 @@ import { DashboardController } from './controllers/dashboard.controller';
     WithdrawalController,
     WebhookLogController,
     DashboardController,
+    UsersController,
   ],
   providers: [
     AppService,
@@ -158,10 +166,13 @@ import { DashboardController } from './controllers/dashboard.controller';
     PaymentRepository,
     WithdrawalRepository,
     WebhookLogRepository,
+    UserRepository,
     WalletService,
     PaymentService,
     WithdrawalService,
     WebhookLogService,
+    ExternalApiService,
+    UserService,
   ],
 })
 export class AppModule {}

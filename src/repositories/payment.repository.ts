@@ -42,6 +42,7 @@ export class PaymentRepository extends Repository<PaymentEntity> {
   }
 
   async createPayment(
+    userId: string,
     reference: string,
     type: PaymentType,
     amount: number,
@@ -50,6 +51,7 @@ export class PaymentRepository extends Repository<PaymentEntity> {
     status: PaymentStatus = PaymentStatus.PENDING,
   ): Promise<PaymentEntity> {
     const payment = this.paymentRepository.create({
+      userId,
       reference,
       type,
       amount,

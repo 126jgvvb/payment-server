@@ -8,6 +8,7 @@ export class PaymentService {
 
   /**
    * Creates a new payment
+   * @param userId - User ID
    * @param reference - Unique payment reference
    * @param type - Payment type (COLLECTION or PAYOUT)
    * @param amount - Payment amount
@@ -17,6 +18,7 @@ export class PaymentService {
    * @returns Promise<PaymentEntity>
    */
   async createPayment(
+    userId: string,
     reference: string,
     type: PaymentType,
     amount: number,
@@ -31,6 +33,7 @@ export class PaymentService {
     }
 
     return this.paymentRepository.createPayment(
+      userId,
       reference,
       type,
       amount,
@@ -133,5 +136,18 @@ export class PaymentService {
 
     payment.rawResponse = rawResponse;
     return this.paymentRepository.save(payment);
+  }
+
+  /**
+   * Gets payments by user ID
+   * @param userId - User ID
+   * @returns Promise<PaymentEntity[]>
+   */
+  async getPaymentsByUserId(userId: string): Promise<PaymentEntity[]> {
+    // This would query payments by user ID in your payment repository
+    return this.paymentRepository.find({
+      where: { userId }, // This assumes your PaymentEntity has a userId field
+      order: { createdAt: 'DESC' },
+    });
   }
 }

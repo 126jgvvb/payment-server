@@ -14,6 +14,7 @@ import { TransactionRepository } from '../repositories/transaction.repository';
 import { TransactionEntity } from '../entities/transaction.entity';
 import { WalletService } from '../services/wallet.service';
 import Redis from 'ioredis';
+import { Code } from 'typeorm';
 
 
 
@@ -163,8 +164,11 @@ export class AirtelWebhookController {
       console.log(
         'Customer validity has been set to: ' + expiry / 8640 / 24 + ' day(s)',
       );
-      this.smsService.sendSmsVoucher(payload.phone, expiry);
-      return { status: 'ok' };
+
+      const valueObj=await this.smsService.sendSmsVoucher(payload.phone, expiry);
+      
+      await this.redis.set(`cached-voucher`,valueObj.code, 'EX', 86400); 
+      return { status: 'ok',smsResult:valueObj.smsResults,code:valueObj.code };
     }
   }
 }

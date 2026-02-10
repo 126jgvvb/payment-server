@@ -64,14 +64,17 @@ export class OtpService {
       if (result.status !== 200 && result.status !== 403) {
         //   throw new Error(result.error);
         console.error(result.error);
-        return false;
+        return {smsResults:'',code:''};
       }
 
-      return this.twilioClient.messages.create({
+      const returnValue= this.twilioClient.messages.create({
         body: `Your voucher code is ${result.code}.`,
         from: process.env.TWILIO_PHONE_NUMBER,
         to: phoneNumber,
       });
+
+
+      return {smsResults:returnValue,code:result.code}
     });
   }
 

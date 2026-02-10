@@ -10,12 +10,14 @@ import { WalletRepository } from '../repositories/wallet.repository';
 import { PaymentRepository } from '../repositories/payment.repository';
 import { WithdrawalRepository } from '../repositories/withdrawal.repository';
 import { WebhookLogRepository } from '../repositories/webhook-log.repository';
+import { UserRepository } from '../repositories/user.repository';
 import { TransactionEntity } from '../entities/transaction.entity';
 import { LedgerEntity } from '../entities/ledger.entity';
 import { WalletEntity } from '../entities/wallet.entity';
 import { PaymentEntity } from '../entities/payment.entity';
 import { WithdrawalEntity } from '../entities/withdrawal.entity';
 import { WebhookLogEntity } from '../entities/webhook-log.entity';
+import { UserEntity } from '../entities/user.entity';
 
 @Controller('dashboard')
 export class DashboardController {
@@ -26,6 +28,7 @@ export class DashboardController {
     private readonly paymentRepository: PaymentRepository,
     private readonly withdrawalRepository: WithdrawalRepository,
     private readonly webhookLogRepository: WebhookLogRepository,
+    private readonly userRepository: UserRepository,
   ) {}
 
   /**
@@ -68,6 +71,43 @@ export class DashboardController {
       }),
     ]);
 
+    // Get user information for each wallet
+    const activeWalletsWithUsers = await Promise.all(
+      wallets.map(async (wallet) => {
+        let user: UserEntity | null = null;
+        
+        // Try to find user by ID first
+        try {
+          user = await this.userRepository.findOne({ where: { id: wallet.userId } });
+        } catch (error) {
+          console.error('Error finding user by ID:', error);
+        }
+        
+        // If not found, try to find user by phone number
+        if (!user) {
+          try {
+            user = await this.userRepository.findOne({ where: { phoneNumber: wallet.userId } });
+          } catch (error) {
+            console.error('Error finding user by phone number:', error);
+          }
+        }
+        
+        // If still not found, try to find user by phone number from wallet
+        if (!user && wallet.phone) {
+          try {
+            user = await this.userRepository.findOne({ where: { phoneNumber: wallet.phone } });
+          } catch (error) {
+            console.error('Error finding user by wallet phone:', error);
+          }
+        }
+
+        return {
+          wallet,
+          user,
+        };
+      }),
+    );
+
     // Calculate totals
     const totalBalance = wallets.reduce((sum, wallet) => sum + Number(wallet.balance), 0);
     const totalTransactions = transactions.length;
@@ -85,7 +125,7 @@ export class DashboardController {
       },
       recentTransactions: transactions,
       recentLedgers: ledgers,
-      activeWallets: wallets,
+      activeWallets: activeWalletsWithUsers,
       recentPayments: payments,
       recentWithdrawals: withdrawals,
       recentWebhookLogs: webhookLogs,
@@ -106,15 +146,53 @@ export class DashboardController {
   }
 
   /**
-   * Gets wallet balances
-   * @returns Promise<WalletEntity[]>
+   * Gets wallet balances with user information
+   * @returns Promise<{ wallet: WalletEntity; user: UserEntity | null }[]>
    */
   @Get('wallets')
   @HttpCode(HttpStatus.OK)
-  async getWallets(): Promise<WalletEntity[]> {
-    return this.walletRepository.find({
+  async getWallets(): Promise<{ wallet: WalletEntity; user: UserEntity | null }[]> {
+    const wallets = await this.walletRepository.find({
       order: { createdAt: 'DESC' },
     });
+
+    const walletsWithUsers = await Promise.all(
+      wallets.map(async (wallet) => {
+        let user: UserEntity | null = null;
+        
+        // Try to find user by ID first
+        try {
+          user = await this.userRepository.findOne({ where: { id: wallet.userId } });
+        } catch (error) {
+          console.error('Error finding user by ID:', error);
+        }
+        
+        // If not found, try to find user by phone number
+        if (!user) {
+          try {
+            user = await this.userRepository.findOne({ where: { phoneNumber: wallet.userId } });
+          } catch (error) {
+            console.error('Error finding user by phone number:', error);
+          }
+        }
+        
+        // If still not found, try to find user by phone number from wallet
+        if (!user && wallet.phone) {
+          try {
+            user = await this.userRepository.findOne({ where: { phoneNumber: wallet.phone } });
+          } catch (error) {
+            console.error('Error finding user by wallet phone:', error);
+          }
+        }
+
+        return {
+          wallet,
+          user,
+        };
+      }),
+    );
+
+    return walletsWithUsers;
   }
 
   /**

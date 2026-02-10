@@ -17,6 +17,9 @@ export class WalletEntity {
   @Column({ type: 'varchar', length: 3, default: 'USD' })
   currency: string;
 
+  @Column({ default: false })
+  isFrozen: boolean;
+
   @CreateDateColumn()
   createdAt: Date;
 

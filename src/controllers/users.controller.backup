@@ -1,0 +1,543 @@
+import {
+  Controller,
+  Post,
+  Get,
+  Put,
+  Delete,
+  Param,
+  Body,
+  HttpCode,
+  HttpStatus,
+  UseGuards,
+  Request,
+} from '@nestjs/common';
+import { JwtAuthGuard } from '../guards/jwt-auth.guard';
+import { JWTService } from '../services/jwt/jwt.service';
+import { WalletService } from '../services/wallet.service';
+import { PaymentService } from '../services/payment.service';
+import { WithdrawalService } from '../services/withdrawal.service';
+import { ExternalApiService } from '../services/external-api/external-api.service';
+import { UserService } from '../services/user.service';
+import { WalletEntity } from '../entities/wallet.entity';
+import { PaymentEntity } from '../entities/payment.entity';
+import { WithdrawalEntity } from '../entities/withdrawal.entity';
+import { CreateWalletDto } from '../dtos/wallet.dto';
+
+// DTO interfaces for client operations
+interface ClientSignupDto {
+  fullName: string;
+  email: string;
+  phoneNumber: string;
+  walletId: string;
+  password: string;
+}
+
+interface ClientLoginDto {
+  phoneNumber: string;
+  password: string;
+}
+
+interface ClientProfileUpdateDto {
+  fullName?: string;
+  email?: string;
+  phoneNumber?: string;
+}
+
+@Controller('users')
+export class UsersController {
+  constructor(
+    private readonly jwtService: JWTService,
+    private readonly walletService: WalletService,
+    private readonly paymentService: PaymentService,
+    private readonly withdrawalService: WithdrawalService,
+    private readonly externalApiService: ExternalApiService,
+    private readonly userService: UserService,
+  ) {}
+
+  /**
+   * Client signup endpoint - creates a new user with wallet
+   * @param signupDto - Client signup data
+   * @returns Promise<{ user: any; wallet: WalletEntity; token: string }>
+   */
+  @Post('signup')
+  @HttpCode(HttpStatus.CREATED)
+   async clientSignup(@Body() signupDto: ClientSignupDto) {
+    // Create user in the database
+    const user = await this.userService.createUser({
+      fullName: signupDto.fullName,
+      email: signupDto.email,
+      phoneNumber: signupDto.phoneNumber,
+      password: signupDto.password,
+    });
+
+    // Create wallet for the user
+    const wallet = await this.walletService.createWallet(
+      user.id,
+      'USD',
+      0,
+      user.phoneNumber,
+    );
+
+    // Update user with walletId
+    await this.userService.updateUser(user.id, {
+      walletId: wallet.id,
+    });
+
+    // Generate JWT token
+    const token = this.jwtService.generateToken({
+      userId: user.id,
+      walletId: wallet.id,
+      fullName: user.fullName,
+      email: user.email,
+      phoneNumber: user.phoneNumber,
+    });
+
+    return {
+      user: { ...user, walletId: wallet.id },
+      wallet,
+      token,
+    };
+  }
+
+  /**
+   * Client login endpoint
+   * @param loginDto - Client login credentials
+   * @returns Promise<{ user: any; wallet: WalletEntity; token: string }>
+   */
+  @Post('login')
+  @HttpCode(HttpStatus.OK)
+  async clientLogin(@Body() loginDto: ClientLoginDto) {
+    // Find user by phoneNumber
+    const user = await this.userService.findByPhoneNumber(loginDto.phoneNumber);
+    if (!user) {
+      return {
+        status: 'error',
+        message: 'Invalid phone number or password',
+      };
+    }
+
+    // Verify password
+    const isPasswordValid = await this.userService.validatePassword(
+      user,
+      loginDto.password,
+    );
+    if (!isPasswordValid) {
+      return {
+        status: 'error',
+        message: 'Invalid phone number or password',
+      };
+    }
+
+    // Get user's wallet
+    const wallet = await this.walletService.findByPhone(user.phoneNumber);
+    if (!wallet) {
+      return {
+        status: 'error',
+        message: 'Wallet not found for this phone number',
+      };
+    }
+
+    // Generate JWT token
+    const token = this.jwtService.generateToken({
+      userId: user.id,
+      walletId: wallet.id,
+      fullName: user.fullName,
+      email: user.email,
+      phoneNumber: user.phoneNumber,
+    });
+
+    return {
+      user,
+      wallet,
+      token,
+    };
+  }
+
+  /**
+   * Gets client profile data
+   * @param req - Request object with user data
+   * @returns Promise<{ user: any; wallet: WalletEntity }>
+   */
+  @Get('profile')
+  @HttpCode(HttpStatus.OK)
+  async getClientProfile(@Request() req) {
+    const userId = req.user?.userId || req.user?.walletId;
+    
+    // Get user data from database
+    const user = await this.userService.findById(userId);
+    if (!user) {
+      return {
+        status: 'error',
+        message: 'User not found',
+      };
+    }
+
+    // Get user's wallet
+    const wallet = await this.walletService.findByUserId(userId);
+
+    return {
+      user,
+      wallet,
+    };
+  }
+
+  /**
+   * Updates client profile
+   * @param req - Request object with user data
+   * @param updateDto - Profile update data
+   * @returns Promise<{ user: any }>
+   */
+  @Put('profile')
+  @HttpCode(HttpStatus.OK)
+  async updateClientProfile(
+    @Request() req,
+    @Body() updateDto: ClientProfileUpdateDto,
+  ) {
+    const userId = req.user?.userId || req.user?.walletId;
+
+    // Update user profile in database
+    const updatedUser = await this.userService.updateUser(userId, updateDto);
+    if (!updatedUser) {
+      return {
+        status: 'error',
+        message: 'User not found',
+      };
+    }
+
+    return {
+      user: updatedUser,
+    };
+  }
+
+  /**
+   * Gets client dashboard data
+   * @param req - Request object with user data
+   * @returns Promise<object>
+   */
+  @Get('dashboard')
+  @HttpCode(HttpStatus.OK)
+  async getClientDashboard(@Request() req) {
+    const userId = req.user?.userId || req.user?.walletId;
+
+    // Get user's wallet
+    const wallet = await this.walletService.findByUserId(userId);
+
+    // Get user's payment history
+    const payments = await this.paymentService.getPaymentsByUserId(userId);
+
+    // Get user's withdrawal history
+    const withdrawals = await this.withdrawalService.getWithdrawalsByUserId(userId);
+
+    // Get user data to access phone number
+    const user = await this.userService.findById(userId);
+    if (!user) {
+      return {
+        status: 'error',
+        message: 'User not found',
+      };
+    }
+
+      // Get user's linked routers from external API
+     const routersResponse = await this.externalApiService.getRoutersByPhoneNumber(user.phoneNumber);
+     const linkedRouters = routersResponse.data || [];
+     const formattedRouters = linkedRouters.map((router: any, index: number) => ({
+       id: `${index + 1}`,
+       name: router.routerName || `Router-${index + 1}`,
+       macAddress: router.routerIP || 'Unknown',
+     }));
+
+     // Get currently running tokens from external API
+    const vouchersResponse = await this.externalApiService.getAllVouchersInMemory();
+    const allVouchers = vouchersResponse.data || [];
+    
+     // Filter vouchers by user's phone number and router MAC address
+     const currentlyRunningTokens = allVouchers.filter((voucher: any) => 
+       voucher.phoneNumber === user.phoneNumber && 
+       formattedRouters.some(router => router.macAddress === voucher.routerIP)
+     ).map((voucher: any, index: number) => ({
+       id: `voucher-${index + 1}`,
+       tokenId: voucher.code,
+       router: voucher.routerIP || 'Unknown Router',
+       duration: this.getDurationFromExpiry(voucher.expiry),
+       expiryTime: new Date(Date.now() + voucher.expiry * 1000).toISOString(),
+       status: voucher.status === 'access granted' ? 'active' : voucher.status,
+       createdBy: userId,
+       createdAt: new Date(),
+       payment: voucher.payment,
+       connectionID: voucher.connectionID,
+       origUrl: voucher.origUrl,
+       clientID: voucher.clientID,
+       isBound: voucher.isBound,
+       ip: voucher.ip,
+     }));
+
+    return {
+      statistics: {
+        currentBalance: wallet?.balance || 0,
+        totalPayments: payments.length,
+        totalWithdrawals: withdrawals.length,
+        activeTokens: currentlyRunningTokens.length,
+        linkedRouters: formattedRouters.length,
+      },
+      wallet,
+      recentPayments: payments.slice(0, 5),
+      recentWithdrawals: withdrawals.slice(0, 5),
+      linkedRouters: formattedRouters,
+      currentlyRunningTokens,
+    };
+  }
+
+  /**
+   * Gets user's payment history
+   * @param req - Request object with user data
+   * @returns Promise<PaymentEntity[]>
+   */
+  @Get('payments')
+  @HttpCode(HttpStatus.OK)
+  async getClientPayments(@Request() req) {
+    const userId = req.user?.userId || req.user?.walletId;
+    return this.paymentService.getPaymentsByUserId(userId);
+  }
+
+  /**
+   * Gets user's withdrawal history
+   * @param req - Request object with user data
+   * @returns Promise<WithdrawalEntity[]>
+   */
+  @Get('withdrawals')
+  @HttpCode(HttpStatus.OK)
+  async getClientWithdrawals(@Request() req) {
+    const userId = req.user?.userId || req.user?.walletId;
+    return this.withdrawalService.getWithdrawalsByUserId(userId);
+  }
+
+   /**
+     * Generates vouchers for the client
+     * @param req - Request object with user data
+     * @param voucherData - Voucher generation data
+     * @returns Promise<{ vouchers: any[] }>
+     */
+     @Post('vouchers')
+  @HttpCode(HttpStatus.CREATED)
+  async generateVouchers(
+    @Request() req,
+    @Body() voucherData: { quantity: number; duration: string },
+  ) {
+    const userId = req.user?.userId || req.user?.walletId;
+
+    // Get user data to access phone number
+    const user = await this.userService.findById(userId);
+    if (!user) {
+      return {
+        status: 'error',
+        message: 'User not found',
+      };
+    }
+
+    // Get user's linked routers
+    const routersResponse = await this.externalApiService.getRouters();
+    const allRouters = routersResponse.data || [];
+    const linkedRouters = allRouters.filter((router: any) => 
+      router.holderNumber === user.phoneNumber
+    );
+
+    // Convert duration string to seconds for external API
+    const durationStr = voucherData.duration.toLowerCase().trim();
+    let durationInSeconds: number;
+
+    // Parse duration like "6 hours", "30 minutes", "2 days"
+    const hourMatch = durationStr.match(/(\d+)\s*hour/i);
+    if (hourMatch) {
+      durationInSeconds = Number(hourMatch[1]) * 3600;
+    } else {
+      const minuteMatch = durationStr.match(/(\d+)\s*minute/i);
+      if (minuteMatch) {
+        durationInSeconds = Number(minuteMatch[1]) * 60;
+      } else {
+        const dayMatch = durationStr.match(/(\d+)\s*day/i);
+        if (dayMatch) {
+          durationInSeconds = Number(dayMatch[1]) * 86400;
+        } else {
+          // Default to hours if just a number is provided
+          durationInSeconds = Number(durationStr) * 3600;
+        }
+      }
+    }
+
+    // Call external API to generate bulk vouchers
+    const response = await this.externalApiService.generateBulkVouchers(
+      voucherData.quantity,
+      durationInSeconds,
+    );
+
+    // Format the vouchers with additional details
+    const vouchers = response.codes.map((tokenId: string, index: number) => ({
+      id: `voucher-${Date.now()}-${index}`,
+      tokenId: tokenId,
+      router: linkedRouters.length > 0 ? linkedRouters[index % linkedRouters.length].routerName || 'Unknown Router' : 'Main-Lobby-R1',
+      duration: voucherData.duration,
+      expiryTime: new Date(Date.now() + this.getDurationMs(voucherData.duration)).toISOString(),
+      status: 'active',
+      createdBy: userId,
+      createdAt: new Date(),
+    }));
+
+    return {
+      vouchers,
+    };
+  }
+
+  /**
+     * Gets client's generated vouchers
+     * @param req - Request object with user data
+     * @returns Promise<{ vouchers: any[] }>
+     */
+  @Get('vouchers')
+  @HttpCode(HttpStatus.OK)
+  async getClientVouchers(@Request() req) {
+//    const userId = req.user?.userId || req.user?.walletId;
+    const userId = req.body?.userId || req.body?.walletId;
+
+    // Get user data to access phone number
+    const user = await this.userService.findById(userId);
+    if (!user) {
+      return {
+        status: 'error',
+        message: 'User not found',
+      };
+    }
+
+    console.log('=== getClientVouchers ===');
+    console.log('User ID:', userId);
+    console.log('User data:', user);
+    console.log('Phone number:', user.phoneNumber);
+
+    // Get user's linked routers
+    const routersResponse = await this.externalApiService.getRoutersByPhoneNumber(user.phoneNumber);
+    const linkedRouters = routersResponse.data || [];
+
+    console.log('Routers response:', routersResponse);
+    console.log('Linked routers:', linkedRouters);
+    console.log('Router properties:', linkedRouters.length > 0 ? Object.keys(linkedRouters[0]) : []);
+
+    // Get current voucher codes from external API
+    const vouchersResponse = await this.externalApiService.getCurrentVoucherCodes();
+    const allVouchers = vouchersResponse.data || [];
+
+    console.log('Vouchers response:', vouchersResponse);
+    console.log('All vouchers:', allVouchers);
+    console.log('Voucher properties:', allVouchers.length > 0 ? Object.keys(allVouchers[0]) : []);
+    
+    // Filter vouchers by user's phone number and router MAC address
+    const userVouchers = allVouchers.filter((voucher: any) => {
+      const matchesPhone = voucher.phoneNumber === user.phoneNumber;
+      const matchesRouter = linkedRouters.some(router => router.routerIP === voucher.routerIP);
+      console.log(`Voucher ${voucher.code}: Phone match=${matchesPhone}, Router match=${matchesRouter}`);
+      return matchesPhone || matchesRouter;
+    }).map((voucher: any, index: number) => ({
+      id: `voucher-${index + 1}`,
+      tokenId: voucher.code,
+      router: voucher.routerIP || 'Unknown Router',
+      duration: this.getDurationFromExpiry(voucher.expiry),
+      expiryTime: new Date(Date.now() + voucher.expiry * 1000).toISOString(),
+      status: voucher.status === 'access granted' ? 'active' : voucher.status,
+      createdBy: userId,
+      createdAt: new Date(),
+      payment: voucher.payment,
+      connectionID: voucher.connectionID,
+      origUrl: voucher.origUrl,
+      clientID: voucher.clientID,
+      isBound: voucher.isBound,
+      ip: voucher.ip,
+    }));
+
+    console.log('Filtered vouchers:', userVouchers);
+
+    return {
+      vouchers: userVouchers,
+    };
+  }
+
+  /**
+     * Gets client's linked routers
+     * @param req - Request object with user data
+     * @returns Promise<{ routers: any[] }>
+     */
+  @Get('routers')
+  @HttpCode(HttpStatus.OK)
+  async getClientRouters(@Request() req) {
+    const userId = req.user?.userId || req.user?.walletId;
+
+    // Get user data to access phone number
+    const user = await this.userService.findById(userId);
+    if (!user) {
+      return {
+        status: 'error',
+        message: 'User not found',
+      };
+    }
+
+    // Get user's linked routers from external API
+    const routersResponse = await this.externalApiService.getRoutersByPhoneNumber(user.phoneNumber);
+    const linkedRouters = routersResponse.data || [];
+
+    // Format routers with additional details
+    const formattedRouters = linkedRouters.map((router: any, index: number) => ({
+      id: `${index + 1}`,
+      name: router.name || `Router-${index + 1}`,
+      macAddress: router.routerIP || 'Unknown',
+    }));
+
+    return {
+      routers: formattedRouters,
+    };
+  }
+
+  /**
+     * Helper method to convert duration string to milliseconds
+     * @param duration - Duration string (e.g., '1hr', '2hr', '4hr', '8hr', '1day', '3day', '1week', '1month')
+     * @returns number - Duration in milliseconds
+     */
+  private getDurationMs(duration: string): number {
+    const durationMap: Record<string, number> = {
+      '1hr': 3600000,
+      '2hr': 7200000,
+      '4hr': 14400000,
+      '8hr': 28800000,
+      '1day': 86400000,
+      '3day': 259200000,
+      '1week': 604800000,
+      '1month': 2592000000,
+    };
+
+    return durationMap[duration] || 3600000; // Default to 1 hour
+  }
+
+  /**
+     * Helper method to convert expiry time in seconds to duration string
+     * @param expiryInSeconds - Expiry time in seconds
+     * @returns string - Duration string (e.g., '1hr', '2hr', '1day')
+     */
+  private getDurationFromExpiry(expiryInSeconds: number): string {
+    const hourInSeconds = 3600;
+    const dayInSeconds = 86400;
+    const weekInSeconds = 604800;
+    const monthInSeconds = 2592000;
+
+    if (expiryInSeconds < hourInSeconds) {
+      return `${Math.ceil(expiryInSeconds / 60)}min`;
+    } else if (expiryInSeconds < dayInSeconds) {
+      const hours = Math.ceil(expiryInSeconds / hourInSeconds);
+      return `${hours}hr${hours > 1 ? 's' : ''}`;
+    } else if (expiryInSeconds < weekInSeconds) {
+      const days = Math.ceil(expiryInSeconds / dayInSeconds);
+      return `${days}day${days > 1 ? 's' : ''}`;
+    } else if (expiryInSeconds < monthInSeconds) {
+      const weeks = Math.ceil(expiryInSeconds / weekInSeconds);
+      return `${weeks}week${weeks > 1 ? 's' : ''}`;
+    } else {
+      const months = Math.ceil(expiryInSeconds / monthInSeconds);
+      return `${months}month${months > 1 ? 's' : ''}`;
+    }
+  }
+}

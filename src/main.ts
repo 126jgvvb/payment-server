@@ -15,6 +15,12 @@ console.log('DB_PORT:', process.env.DB_PORT);
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  // Enable CORS
+  app.enableCors({
+    origin: ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:5175', 'http://localhost:5176'],
+    credentials: true,
+  });
+
   app.use(
     bodyParser.json({
       verify: (req: any, _res, buf) => {

@@ -26,7 +26,10 @@ export class PaymentController {
   async createPayment(
     @Body() createPaymentDto: CreatePaymentDto,
   ): Promise<PaymentEntity> {
+    // In a real application, you would get userId from authentication
+    const mockUserId = 'test-user-id';
     return this.paymentService.createPayment(
+      mockUserId,
       createPaymentDto.reference,
       createPaymentDto.type,
       createPaymentDto.amount,

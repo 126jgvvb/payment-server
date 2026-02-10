@@ -16,6 +16,9 @@ export class PaymentEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  @Column()
+  userId: string;
+
   @Column({ unique: true })
   reference: string;
 

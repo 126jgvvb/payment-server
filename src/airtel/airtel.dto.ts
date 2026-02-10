@@ -1,8 +1,8 @@
 export class AirtelCollectDto {
-  phone: string;
-  amount: number;
-  reference: string;
-  reSellerPhoneNumber?: string;
+  phoneNumber: string;
+  selectedPrice: number;
+  reference?: string;
+  reSellerPhoneNumber: string;
 }
 
 export class AirtelPayoutDto {
