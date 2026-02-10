@@ -17,7 +17,7 @@ async function bootstrap() {
 
   // Enable CORS
   app.enableCors({
-    origin: ['http://localhost:5173', 'https://payment-server-production-9b18.up.railway.app'],
+    origin: ['http://localhost:5173', 'https://twist-dash3-git-main-delos-kevins-projects.vercel.app'],
     credentials: true,
   });
 
