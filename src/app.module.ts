@@ -50,6 +50,7 @@ import { DashboardController } from './controllers/dashboard.controller';
 import { UsersController } from './controllers/users.controller';
 import { UserService } from './services/user.service';
 import { ExternalApiService } from './services/external-api/external-api.service';
+import { IotecModule } from './modules/iotec.module';
 
 @Module({
   imports: [
@@ -57,6 +58,7 @@ import { ExternalApiService } from './services/external-api/external-api.service
     MongodbModule,
     HttpModule,
     ConfigModule,
+    IotecModule,
 
     ConfigModule.forRoot({ 
       isGlobal: true,
