@@ -205,6 +205,34 @@ export class IotecService {
       } else {
         console.log('voucher obtained...continuing');
         voucherCode=await this.redis.get('cached-voucher');
+
+        if(voucherCode=='null'){
+            voucherCode=null;
+        }
+
+        // Update responseBody status to reflect success after voucher is obtained
+        if (voucherCode && voucherCode !== 'zero') {
+          responseBody.status = 'Success';
+          responseBody.statusCode = 200;
+          responseBody.statusMessage = 'Voucher collected successfully';
+          
+          // Also update Redis cache with success status
+          if (transactionId) {
+            await this.redis.set(
+              `transaction:${transactionId}:status`,
+              'Success',
+              'EX',
+              86400,
+            );
+            await this.redis.set(
+              `transaction:${transactionId}:statusCode`,
+              '200',
+              'EX',
+              86400,
+            );
+          }
+        }
+
         await this.redis.set(`cached-voucher`, 'zero');
       } 
       

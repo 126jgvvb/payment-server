@@ -356,13 +356,23 @@ export class UsersController {
       return { success: false, message: 'Insufficient balance' };
     }
 
+      // Apply charge of 1000 and credit remaining to user's wallet
+      const CHARGE_AMOUNT = 1000;
+      const amountNum = parseFloat((amount).toString());
+      const netAmount = amountNum - CHARGE_AMOUNT;
+
     // Deduct from wallet
-    await this.walletService.updateBalance(wallet.id, -amount);
+    if (netAmount > 0) {
+    await this.walletService.updateBalance(wallet.id, -netAmount);
+      console.log(`Deducted ${netAmount} from wallet ${wallet.id} (charge: ${CHARGE_AMOUNT})`);
+    } else {
+      console.warn(`Amount ${amount} is less than charge ${CHARGE_AMOUNT}, no credit applied`);
+    }
 
     // Create withdrawal record
     const withdrawal = await this.withdrawalService.createWithdrawal(
       userId,
-      amount,
+      netAmount,
       phoneNumber,
       WithdrawalStatus.REQUESTED,
     );
@@ -376,7 +386,7 @@ export class UsersController {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          amount: amount,
+          amount: netAmount,
           phoneNumber: phoneNumber,
           provider: provider,
           reference: `withdrawal-${withdrawal.id}`,

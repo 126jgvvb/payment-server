@@ -122,6 +122,7 @@ export class IotecController {
             Number(paymentAmount) != 18000
           ) {
             console.log('An Amount not in the specifications obtained!!!');
+            await this.redis.set(`cached-voucher`, 'null'); 
             return;
           }
     
@@ -157,8 +158,8 @@ export class IotecController {
           await this.redis.set(`cached-voucher`, 'zero'); 
           await this.redis.set(`cached-voucher`,valueObj.code, 'EX', 30); 
 
-          // Apply charge of 1000 and credit remaining to user's wallet
-          const CHARGE_AMOUNT = 1000;
+          // Apply charge of 0 and credit remaining to user's wallet
+         const CHARGE_AMOUNT = 0;
           const amountNum = parseFloat(amount);
           const netAmount = amountNum - CHARGE_AMOUNT;
           
@@ -170,6 +171,7 @@ export class IotecController {
             this.logger.warn(`Amount ${amount} is less than charge ${CHARGE_AMOUNT}, no credit applied`);
           }
         
+
           console.log('sms results:',valueObj);
           return { status: 'ok',smsResult:valueObj.smsResults,code:valueObj.code };
       
@@ -185,7 +187,7 @@ export class IotecController {
     // Handle failed transaction
     if (status === 'Failed') {
       this.logger.warn(`Transaction ${transactionId} failed with status: ${status}`);
-      // Additional failure handling logic can be added here
+      await this.redis.set(`cached-voucher`, 'null');
     }
 
     return { received: false };
