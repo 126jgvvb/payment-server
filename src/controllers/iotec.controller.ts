@@ -67,7 +67,8 @@ export class IotecController {
     const transactionId = body.id;
     const status = body.status;
     const amount = body.amount;
-    const phone = body.payer;
+    const phone = body.payeeNote;
+    const clientPhoneNumber=body.payer;
     const reference = body.reference;
 
     // Check if transaction already exists (idempotency check)
@@ -78,6 +79,7 @@ export class IotecController {
       transaction = new TransactionEntity();
       transaction.reference = transactionId;
       transaction.phone = phone;
+      transaction.clientPhoneNumber=clientPhoneNumber;
       transaction.amount = amount;
       transaction.currency = body.data?.currency || 'UGX';
       transaction.paymentMethod = 'iotec';

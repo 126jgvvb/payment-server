@@ -11,6 +11,9 @@ export class TransactionEntity {
   @Column({ nullable: true })
   phone: string;
 
+  @Column({ nullable: true })
+  clientPhoneNumber: string;
+
   @Column('numeric')
   amount: number;
 
