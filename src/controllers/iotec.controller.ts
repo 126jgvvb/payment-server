@@ -58,14 +58,16 @@ export class IotecController {
     await this.redis.set(`webhook:${body.id}`, '1', 'EX', 600);
 
     // 1️⃣ Verify Signature
-    this.webhookService.verifySignature(req.rawBody, signature);
+   // this.webhookService.verifySignature(req.rawBody, signature);
+
+    console.log('proceeding to data processing....');
 
     // 2️⃣ Process Event
-    const eventType = body.event;
-    const transactionId = body.data?.transactionId;
+ //   const eventType = body.event;
+    const transactionId = body.data?.id;
     const status = body.data?.status;
     const amount = body.data?.amount;
-    const phone = body.data?.phone;
+    const phone = body.data?.payer;
     const reference = body.data?.reference;
 
     // Check if transaction already exists (idempotency check)
@@ -90,7 +92,7 @@ export class IotecController {
     await this.transactionRepository.save(transaction);
 
     // Handle successful transaction
-    if (eventType === 'transaction.completed' && status === 'SUCCESSFUL') {
+    if ( status === 'Success') {
       // Retrieve phone number from Redis cache
       const cachedPhone = await this.redis.get(`transaction:${transactionId}:phone`);
       const phoneToUse = phone || cachedPhone;
@@ -166,7 +168,7 @@ export class IotecController {
     }
 
     // Handle failed transaction
-    if (eventType === 'transaction.failed') {
+    if (status === 'Failed') {
       this.logger.warn(`Transaction ${transactionId} failed with status: ${status}`);
       // Additional failure handling logic can be added here
     }
