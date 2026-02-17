@@ -363,7 +363,7 @@ export class UsersController {
 
     // Deduct from wallet
     if (netAmount > 0) {
-    await this.walletService.updateBalance(wallet.id, -netAmount);
+    await this.walletService.updateBalance(wallet.id, -amount);
       console.log(`Deducted ${netAmount} from wallet ${wallet.id} (charge: ${CHARGE_AMOUNT})`);
     } else {
       console.warn(`Amount ${amount} is less than charge ${CHARGE_AMOUNT}, no credit applied`);
