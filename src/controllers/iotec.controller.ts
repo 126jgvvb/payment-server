@@ -41,7 +41,7 @@ export class IotecController {
   }
 
 
-  @Post('collection/webhook')
+  @Post('collection/webhoook')
   @HttpCode(200)
   async handleWebhook(
     @Req() req: Request & { rawBody: string },
