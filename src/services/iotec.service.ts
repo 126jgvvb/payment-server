@@ -189,7 +189,9 @@ export class IotecService {
 
       // Waiting for a voucher value to be dropped in cache
       while (await this.redis.get(`cached-voucher`) === 'zero') {
-        console.log('waiting for a voucher...');
+        setInterval(()=>{
+          console.log('waiting for a voucher...');
+        },10000);
       }
       
       console.log('voucher obtained...continuing');
