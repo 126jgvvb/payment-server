@@ -64,11 +64,11 @@ export class IotecController {
 
     // 2️⃣ Process Event
  //   const eventType = body.event;
-    const transactionId = body.data?.id;
-    const status = body.data?.status;
-    const amount = body.data?.amount;
-    const phone = body.data?.payer;
-    const reference = body.data?.reference;
+    const transactionId = body.id;
+    const status = body.status;
+    const amount = body.amount;
+    const phone = body.payer;
+    const reference = body.reference;
 
     // Check if transaction already exists (idempotency check)
     let transaction = await this.transactionRepository.findByReference(transactionId);
@@ -90,6 +90,8 @@ export class IotecController {
     }
 
     await this.transactionRepository.save(transaction);
+
+    console.log('TXN status:',status);
 
     // Handle successful transaction
     if ( status === 'Success') {
