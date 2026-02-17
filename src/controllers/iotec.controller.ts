@@ -49,6 +49,7 @@ export class IotecController {
     @Body() body: any,
   ) {
     this.logger.log(`Received webhook: ${JSON.stringify(body)}`);
+    this.logger.log(`Received signature: ${signature}`);
 
     // Idempotency check - prevent replay attacks
     if (await this.redis.get(`webhook:${body.id}`)) {
