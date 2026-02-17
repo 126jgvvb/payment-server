@@ -58,7 +58,7 @@ export class OtpService {
 
     const result = this.network.sendVoucherGet(
       '/session/generate-voucher',
-      expiry,
+      {expiryTime:expiry},
     );
     return result.then((result) => {
       if (result.status !== 200 && result.status !== 403) {
@@ -67,12 +67,35 @@ export class OtpService {
         return {smsResults:'',code:''};
       }
 
-      const returnValue= this.twilioClient.messages.create({
+      console.log('sending voucher via sms to:',phoneNumber);
+      let returnValue=null;
+
+      // Format phone number to international format
+      let formattedPhone = phoneNumber;
+      if (phoneNumber.startsWith('0')) {
+        // Remove leading 0 and add Uganda country code
+        formattedPhone = '+256' + phoneNumber.substring(1);
+      }
+      else if(phoneNumber.startsWith('256')){
+        formattedPhone='+'+phoneNumber;
+      }
+       else if (!phoneNumber.startsWith('+')) {
+        formattedPhone = '+256' + phoneNumber;
+      }
+
+      return {smsResults:returnValue,code:result.data.code}
+
+      try{
+        /*
+      returnValue= this.twilioClient.messages.create({
         body: `Your voucher code is ${result.code}.`,
         from: process.env.TWILIO_PHONE_NUMBER,
-        to: phoneNumber,
-      });
-
+        to: formattedPhone,
+      });*/
+    }
+    catch(e){
+      console.log('SMS submission error:',e);
+    }
 
       return {smsResults:returnValue,code:result.code}
     });

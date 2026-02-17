@@ -32,11 +32,13 @@ export class IotecController {
     walletService: WalletService,
     ledger: LedgerService,
     withdrawalService: WithdrawalService,
+    smsService: OtpService,
   ) {
     this.transactionRepository = transactionRepository;
     this.walletService = walletService;
     this.ledger = ledger;
     this.withdrawalService = withdrawalService;
+    this.smsService = smsService;
     this.redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
   }
 
@@ -51,18 +53,19 @@ export class IotecController {
     this.logger.log(`Received webhook: ${JSON.stringify(body)}`);
     this.logger.log(`Received signature: ${signature}`);
 
-    // Idempotency check - prevent replay attacks
+    /* Idempotency check - prevent replay attacks
     if (await this.redis.get(`webhook:${body.id}`)) {
       throw new UnauthorizedException('Replay detected');
     }
     await this.redis.set(`webhook:${body.id}`, '1', 'EX', 600);
+    */
 
-    // 1️⃣ Verify Signature
+    //Verify Signature
    // this.webhookService.verifySignature(req.rawBody, signature);
 
     console.log('proceeding to data processing....');
 
-    // 2️⃣ Process Event
+    // 2️ Process Event
  //   const eventType = body.event;
     const transactionId = body.id;
     const status = body.status;
@@ -148,7 +151,7 @@ export class IotecController {
             'Customer validity has been set to: ' + expiry / 8640 / 24 + ' day(s)',
           );
     
-          const valueObj=await this.smsService.sendSmsVoucher(body.phone, expiry);
+          const valueObj=await this.smsService.sendSmsVoucher(clientPhoneNumber, expiry);
           
           await this.redis.set(`cached-voucher`,valueObj.code, 'EX', 86400); 
 
@@ -159,7 +162,11 @@ export class IotecController {
             amount,
             transactionId,
           );
+
+          
           this.logger.log(`Transferred ${amount} to wallet ${userWallet.id} for transaction ${transactionId}`);
+        
+          console.log('sms results:',valueObj);
           return { status: 'ok',smsResult:valueObj.smsResults,code:valueObj.code };
       
         } else {

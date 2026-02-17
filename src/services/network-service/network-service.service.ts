@@ -6,8 +6,8 @@ import config from '../../config/config';
 
 @Injectable()
 export class NetworkService {
-     MONGO_SERVER_URL = config.mongodb_server;
-     MAIN_SERVER_URL=config.main_server_url;
+     MONGO_SERVER_URL = process.env.MONGODB_SERVER;
+     MAIN_SERVER_URL=process.env.MAIN_SERVER_URL;
     async sendPost(route: string, obj: any): Promise<any>{
         console.log('FULL URL:'+this.MONGO_SERVER_URL + route);
 
@@ -48,8 +48,8 @@ export class NetworkService {
         try {
             return await axios.post(this.MAIN_SERVER_URL + route, obj)
                 .then((result) => {
-                    console.log(">>>>>", result.data.data);
-                    return { data: result.data, status: result.status };;
+                    console.log(">>>>>", result.data);
+                    return { data: result.data, status: result.data.status };;
                 })
                 .catch((err) => {
                     return {status:500,error:err}

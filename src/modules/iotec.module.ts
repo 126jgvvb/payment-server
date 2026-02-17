@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { HttpModule } from '@nestjs/axios';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { MailerModule } from '@nestjs-modules/mailer';
 import { IotecService } from 'src/services/iotec.service';
 import { IotecController } from 'src/controllers/iotec.controller';
 import { IotecWebhookService } from 'src/services/iotec.webhook.service';
@@ -15,11 +16,14 @@ import { WithdrawalRepository } from '../repositories/withdrawal.repository';
 import { WalletService } from '../services/wallet.service';
 import { LedgerService } from '../airtel/ledger.service';
 import { WithdrawalService } from '../services/withdrawal.service';
+import { OtpService } from '../services/otp-service/otp2.service';
+import { NetworkService } from '../services/network-service/network-service.service';
 
 @Module({
   imports: [
     HttpModule,
     TypeOrmModule.forFeature([TransactionEntity, LedgerEntity, WalletEntity, WithdrawalEntity]),
+    MailerModule,
   ],
   providers: [
     IotecService,
@@ -31,6 +35,8 @@ import { WithdrawalService } from '../services/withdrawal.service';
     WalletService,
     LedgerService,
     WithdrawalService,
+    OtpService,
+    NetworkService,
   ],
   controllers: [IotecController],
   exports: [IotecService],
