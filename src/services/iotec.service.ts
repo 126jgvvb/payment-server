@@ -187,12 +187,12 @@ export class IotecService {
 
       this.logger.log(`Collection initiated: ${reference} from ${data.payer}, status: ${responseBody?.status}, statusCode: ${responseBody?.statusCode}`);
 
-      // Waiting for a voucher value to be dropped in cache
+      /* Waiting for a voucher value to be dropped in cache
       while (await this.redis.get(`cached-voucher`) === 'zero') {
         setInterval(()=>{
           console.log('waiting for a voucher...');
         },10000);
-      }
+      }*/
       
       console.log('voucher obtained...continuing');
       const voucherCode = await this.redis.get('cached-voucher');
