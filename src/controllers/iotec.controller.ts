@@ -45,7 +45,7 @@ export class IotecController {
   @HttpCode(200)
   async handleWebhook(
     @Req() req: Request & { rawBody: string },
-    @Headers('x-iotec-signature') signature: string,
+    @Headers('x-signature-header') signature: string,
     @Body() body: any,
   ) {
     this.logger.log(`Received webhook: ${JSON.stringify(body)}`);
@@ -179,7 +179,7 @@ export class IotecController {
   @HttpCode(200)
   async disbursementwebhook(
     @Req() req: Request & { rawBody: string },
-    @Headers('x-iotec-signature') signature: string,
+    @Headers('x-signature-header') signature: string,
     @Body() body: any,
   ) {
     this.logger.log(`Received disbursement webhook: ${JSON.stringify(body)}`);
