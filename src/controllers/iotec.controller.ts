@@ -119,7 +119,7 @@ export class IotecController {
             Number(paymentAmount) != 2500 &&
             Number(paymentAmount) != 5000 &&
             Number(paymentAmount) != 9000 &&
-            Number(paymentAmount) != 18000
+            Number(paymentAmount) != 20000
           ) {
             console.log('An Amount not in the specifications obtained!!!');
             await this.redis.set(`cached-voucher`, 'null'); 

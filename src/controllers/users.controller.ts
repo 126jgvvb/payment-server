@@ -18,6 +18,7 @@ import { PaymentService } from '../services/payment.service';
 import { WithdrawalService } from '../services/withdrawal.service';
 import { ExternalApiService } from '../services/external-api/external-api.service';
 import { UserService } from '../services/user.service';
+import { IotecService } from '../services/iotec.service';
 import { WalletEntity } from '../entities/wallet.entity';
 import { PaymentEntity } from '../entities/payment.entity';
 import { WithdrawalEntity, WithdrawalStatus } from '../entities/withdrawal.entity';
@@ -52,6 +53,7 @@ export class UsersController {
     private readonly withdrawalService: WithdrawalService,
     private readonly externalApiService: ExternalApiService,
     private readonly userService: UserService,
+    private readonly iotecService: IotecService,
   ) {}
 
   /**
@@ -356,20 +358,16 @@ export class UsersController {
       return { success: false, message: 'Insufficient balance' };
     }
 
-      // Apply charge of 1000 and credit remaining to user's wallet
-      const CHARGE_AMOUNT = 1000;
-      const amountNum = parseFloat((amount).toString());
-      const netAmount = amountNum - CHARGE_AMOUNT;
+    // Apply charge of 1000 and credit remaining to user's wallet
+    const CHARGE_AMOUNT = 1000;
+    const amountNum = parseFloat((amount).toString());
+    const netAmount = amountNum - CHARGE_AMOUNT;
 
-    // Deduct from wallet
-    if (netAmount > 0) {
-    await this.walletService.updateBalance(wallet.id, -amount);
-      console.log(`Deducted ${netAmount} from wallet ${wallet.id} (charge: ${CHARGE_AMOUNT})`);
-    } else {
-      console.warn(`Amount ${amount} is less than charge ${CHARGE_AMOUNT}, no credit applied`);
+    if (netAmount <= 0) {
+      return { success: false, message: 'Amount is less than minimum charge' };
     }
 
-    // Create withdrawal record
+    // Create withdrawal record first (without deducting from wallet yet)
     const withdrawal = await this.withdrawalService.createWithdrawal(
       userId,
       netAmount,
@@ -377,42 +375,59 @@ export class UsersController {
       WithdrawalStatus.REQUESTED,
     );
 
-    // Trigger disbursement via iotec controller's mobile-money endpoint
+    // Trigger disbursement via iotecService
     try {
-      // Call the iotec endpoint via HTTP
-      const iotecResponse = await fetch('https://payment-server-production-9b18.up.railway.app/iotec/mobile-money', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          amount: netAmount,
-          phoneNumber: phoneNumber,
-          provider: provider,
-          reference: `withdrawal-${withdrawal.id}`,
-        }),
+      // Call the iotecService walletToMobileMoney method directly
+      const disbursementResult = await this.iotecService.walletToMobileMoney({
+        amount: netAmount,
+        phoneNumber: phoneNumber,
+        provider: provider,
+        reference: `withdrawal-${withdrawal.id}`,
+        payee: phoneNumber,
       });
-      
-      const disbursementResult = await iotecResponse.json();
 
-      // Update withdrawal status based on disbursement result
+      // Only deduct from wallet and update status when disbursement is successful
       if (disbursementResult.status === 'Success') {
+        // Deduct from wallet after successful disbursement
+        await this.walletService.updateBalance(wallet.id, -amount);
+        console.log(`Deducted ${amount} from wallet ${wallet.id} (charge: ${CHARGE_AMOUNT}, net: ${netAmount})`);
+        
+        // Update withdrawal status to PAID
         await this.withdrawalService.updateStatus(withdrawal.id, WithdrawalStatus.PAID);
-      } else if (disbursementResult.status === 'Pending') {
+        
+        return {
+          success: true,
+          message: 'Withdrawal completed successfully',
+          withdrawal,
+          disbursement: disbursementResult,
+        };
+      } else if (disbursementResult.status === 'Scheduled') {
+        // For pending status, still deduct but mark as APPROVED
+        await this.walletService.updateBalance(wallet.id, -amount);
+        console.log(`Deducted ${amount} from wallet ${wallet.id} (pending disbursement)`);
+        
         await this.withdrawalService.updateStatus(withdrawal.id, WithdrawalStatus.APPROVED);
+        
+        return {
+          success: true,
+          message: 'Withdrawal request submitted - pending processing',
+          withdrawal,
+          disbursement: disbursementResult,
+        };
+      } else {
+        // Disbursement failed - no deduction needed, mark as rejected
+        await this.withdrawalService.updateStatus(withdrawal.id, WithdrawalStatus.REJECTED);
+        
+        return {
+          success: false,
+          message: 'Withdrawal failed: ' + (disbursementResult.statusMessage || 'Unknown error'),
+          withdrawal,
+          disbursement: disbursementResult,
+        };
       }
-
-      return {
-        success: true,
-        message: 'Withdrawal request submitted successfully',
-        withdrawal,
-        disbursement: disbursementResult,
-      };
     } catch (error) {
-      // If disbursement fails, mark as failed but keep the withdrawal record
+      // If disbursement fails, mark as failed - no wallet deduction was made
       await this.withdrawalService.updateStatus(withdrawal.id, WithdrawalStatus.REJECTED);
-      // Reverse the wallet deduction
-      await this.walletService.updateBalance(wallet.id, amount);
       
       return {
         success: false,
