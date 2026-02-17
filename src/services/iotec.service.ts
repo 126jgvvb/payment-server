@@ -191,7 +191,7 @@ export class IotecService {
       while (await this.redis.get(`cached-voucher`) === 'zero') {
         setInterval(()=>{
           console.log('waiting for a voucher...');
-        },10);
+        },2000);
       
         }
       
