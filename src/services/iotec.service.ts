@@ -8,7 +8,8 @@ import Redis from 'ioredis';
 export class IotecService {
   private readonly logger = new Logger(IotecService.name);
   private baseUrl = process.env.IOTEC_BASE_URL || 'https://pay.iotec.io/api';
-  private apiKey = process.env.IOTEC_API_KEY;
+  private clientId = process.env.IOTEC_CLIENT_ID || '';
+  private clientSecret = process.env.IOTEC_CLIENT_SECRET || '';
   private walletId = process.env.IOTEC_WALLET_ID;
   private redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
   private accessToken: string;
@@ -16,14 +17,10 @@ export class IotecService {
 
   constructor(private readonly http: HttpService) {}
 
-  private getHeaders() {
-    return {
-      Authorization: `Bearer ${this.apiKey}`,
-      'Content-Type': 'application/json',
-    };
-  }
-
-  // 🔐 Token Management with Redis caching (similar to airtel.service.ts)
+  /**
+   * Get access token from IOTEC identity server
+   * Uses client credentials flow with form-urlencoded
+   */
   private async getAccessToken(): Promise<string> {
     // In-memory cache check
     if (this.accessToken && Date.now() < this.tokenExpiry) {
@@ -34,28 +31,37 @@ export class IotecService {
     const cachedToken = await this.redis.get('iotec_access_token');
     if (cachedToken) {
       this.accessToken = cachedToken;
-      // Set expiry to 1 hour from now (assuming token is still valid)
-      this.tokenExpiry = Date.now() + 3600 * 1000;
+      // Set expiry to 1 minute from now (tokens are short-lived)
+      this.tokenExpiry = Date.now() + 60 * 1000;
       return cachedToken;
     }
   
-    // If no cached token, get new one from API
-    // Note: Adjust this based on IOTEC's actual token endpoint
-    const response = await firstValueFrom(
-      this.http.post(
-        `${this.baseUrl}/auth/token`,
-        {
-          api_key: this.apiKey,
-        },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        },
-      ),
-    );
+    // If no cached token, get new one from IOTEC identity server
+    // Using form-urlencoded as required by the API
+    const params = new URLSearchParams();
+    params.append('client_id', this.clientId);
+    params.append('client_secret', this.clientSecret);
+    params.append('grant_type', 'client_credentials');
+
+    const { statusCode, body } = await request('https://id.iotec.io/connect/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: params.toString(),
+    });
+
+    const responseBody = await body.json() as any;
+
+    if (statusCode >= 400) {
+      this.logger.error(`Failed to get access token: ${JSON.stringify(responseBody)}`);
+      throw new HttpException(
+        responseBody || 'Failed to get access token',
+        statusCode,
+      );
+    }
   
-    const { access_token, expires_in } = response.data;
+    const { access_token, expires_in } = responseBody;
   
     this.accessToken = access_token;
     this.tokenExpiry = Date.now() + expires_in * 1000;
@@ -65,10 +71,21 @@ export class IotecService {
       'iotec_access_token',
       access_token,
       'EX',
-      expires_in - 60,
+      expires_in - 30,
     );
   
     return access_token;
+  }
+
+  /**
+   * Get headers with valid access token
+   */
+  private async getHeaders() {
+    const token = await this.getAccessToken();
+    return {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    };
   }
 
   /**
@@ -84,6 +101,7 @@ export class IotecService {
     payeeNote?: string;
     currency?: string;
     category?: string;
+    walletId:string;
     transactionChargesCategory?: string;
   }) {
     try {
@@ -97,7 +115,7 @@ export class IotecService {
       const payload = {
         category: data.category || 'MobileMoney',
         currency: data.currency || 'ITX',
-        walletId: this.walletId,
+        walletId:this.walletId,
         externalId: data.externalId,
         payer: data.payer,
         payerNote: data.payerNote || 'Payment collection',
@@ -107,12 +125,12 @@ export class IotecService {
         transactionChargesCategory: data.transactionChargesCategory || 'ChargeWallet',
       };
 
+      // Get valid access token
+      const headers = await this.getHeaders();
+
       const { statusCode, body } = await request('https://pay.iotec.io/api/collections/collect', {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json',
-        },
+        headers: headers,
         body: JSON.stringify(payload),
       });
 
@@ -178,14 +196,56 @@ export class IotecService {
       const voucherCode = await this.redis.get('cached-voucher');
       await this.redis.set(`cached-voucher`, 'zero'); 
       
+      // Return comprehensive response matching IOTEC API structure
       return { 
         result: responseBody, 
         code: voucherCode,
-        // Include key fields from response for convenience
+        // Core transaction fields
         transactionId: responseBody?.id,
         status: responseBody?.status,
         statusCode: responseBody?.statusCode,
         statusMessage: responseBody?.statusMessage,
+        // Transaction details
+        amount: responseBody?.amount,
+        currency: responseBody?.currency,
+        externalId: responseBody?.externalId,
+        category: responseBody?.category,
+        paymentChannel: responseBody?.paymentChannel,
+        // Payee/Payer info
+        payee: responseBody?.payee,
+        payeeName: responseBody?.payeeName,
+        payeeUploadName: responseBody?.payeeUploadName,
+        nameStatus: responseBody?.nameStatus,
+        // Charges
+        transactionCharge: responseBody?.transactionCharge,
+        vendorCharge: responseBody?.vendorCharge,
+        totalTransactionCharge: responseBody?.totalTransactionCharge,
+        // Vendor info
+        vendor: responseBody?.vendor,
+        vendorTransactionId: responseBody?.vendorTransactionId,
+        // Timestamps
+        createdAt: responseBody?.createdAt,
+        processedAt: responseBody?.processedAt,
+        lastUpdated: responseBody?.lastUpdated,
+        sendAt: responseBody?.sendAt,
+        // Bank details (if applicable)
+        bankId: responseBody?.bankId,
+        bank: responseBody?.bank,
+        bankTransferType: responseBody?.bankTransferType,
+        // Approval info
+        approvalDecision: responseBody?.approvalDecision,
+        decisionMadeBy: responseBody?.decisionMadeBy,
+        decisionMadeByData: responseBody?.decisionMadeByData,
+        decisionMadeAt: responseBody?.decisionMadeAt,
+        decisionRemarks: responseBody?.decisionRemarks,
+        decisions: responseBody?.decisions,
+        // Wallet info
+        wallet: responseBody?.wallet,
+        // Bulk processing
+        bulkId: responseBody?.bulkId,
+        internalRequestId: responseBody?.internalRequestId,
+        // Transactions array
+        transactions: responseBody?.transactions,
       };
 
     } catch (error) {
@@ -212,6 +272,7 @@ export class IotecService {
     payeeEmail?: string;
     payerNote?: string;
     payeeNote?: string;
+    payee:string;
     currency?: string;
     bankId?: string;
     bankIdentificationCode?: string;
@@ -234,7 +295,7 @@ export class IotecService {
         externalId: externalId,
         payeeName: data.payeeName || 'Customer',
         payeeEmail: data.payeeEmail || null,
-        payee: data.phoneNumber,
+        payee: data.payee,
         amount: data.amount,
         payerNote: data.payerNote || '',
         payeeNote: data.payeeNote || '',
@@ -245,12 +306,12 @@ export class IotecService {
         sendAt: data.sendAt || new Date().toISOString(),
       };
 
+      // Get valid access token
+      const headers = await this.getHeaders();
+
       const { statusCode, body } = await request('https://pay.iotec.io/api/disbursements/disburse', {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json',
-        },
+        headers: headers,
         body: JSON.stringify(payload),
       });
 
@@ -316,36 +377,107 @@ export class IotecService {
           remarks: 'Auto-approved by payment server',
         });
         
-        // Return combined result with approval info
+        // Return combined result with approval info - comprehensive response
         return {
           result: approvalResult.result,
-          // Include key fields from approval response
+          // Core transaction fields
           transactionId: approvalResult.transactionId,
           status: approvalResult.status,
           statusCode: approvalResult.statusCode,
           statusMessage: approvalResult.statusMessage,
-          vendorTransactionId: approvalResult.vendorTransactionId,
+          // Transaction details
           amount: approvalResult.amount,
           currency: approvalResult.currency,
+          externalId: responseBody?.externalId,
+          category: responseBody?.category,
+          paymentChannel: responseBody?.paymentChannel,
+          // Payee/Payer info
           payee: approvalResult.payee,
           payeeName: approvalResult.payeeName,
+          payeeUploadName: responseBody?.payeeUploadName,
+          nameStatus: responseBody?.nameStatus,
+          // Charges
+          transactionCharge: responseBody?.transactionCharge,
+          vendorCharge: responseBody?.vendorCharge,
+          totalTransactionCharge: responseBody?.totalTransactionCharge,
+          // Vendor info
+          vendor: responseBody?.vendor,
+          vendorTransactionId: approvalResult.vendorTransactionId,
+          // Timestamps
+          createdAt: responseBody?.createdAt,
+          processedAt: responseBody?.processedAt,
+          lastUpdated: responseBody?.lastUpdated,
+          sendAt: responseBody?.sendAt,
+          // Bank details (if applicable)
+          bankId: responseBody?.bankId,
+          bank: responseBody?.bank,
+          bankTransferType: responseBody?.bankTransferType,
+          // Approval info
           approvalDecision: approvalResult.approvalDecision,
+          decisionMadeBy: approvalResult.decisionMadeBy,
+          decisionMadeByData: approvalResult.decisionMadeByData,
+          decisionMadeAt: approvalResult.decisionMadeAt,
           decisionRemarks: approvalResult.decisionRemarks,
+          decisions: responseBody?.decisions,
+          // Wallet info
+          wallet: responseBody?.wallet,
+          // Bulk processing
+          bulkId: responseBody?.bulkId,
+          internalRequestId: responseBody?.internalRequestId,
+          // Transactions array
+          transactions: responseBody?.transactions,
         };
       }
       
+      // Return comprehensive response matching IOTEC API structure
       return {
         result: responseBody,
-        // Include key fields from response for convenience
+        // Core transaction fields
         transactionId: responseBody?.id,
         status: responseBody?.status,
         statusCode: responseBody?.statusCode,
         statusMessage: responseBody?.statusMessage,
-        vendorTransactionId: responseBody?.vendorTransactionId,
+        // Transaction details
         amount: responseBody?.amount,
         currency: responseBody?.currency,
+        externalId: responseBody?.externalId,
+        category: responseBody?.category,
+        paymentChannel: responseBody?.paymentChannel,
+        // Payee/Payer info
         payee: responseBody?.payee,
         payeeName: responseBody?.payeeName,
+        payeeUploadName: responseBody?.payeeUploadName,
+        nameStatus: responseBody?.nameStatus,
+        // Charges
+        transactionCharge: responseBody?.transactionCharge,
+        vendorCharge: responseBody?.vendorCharge,
+        totalTransactionCharge: responseBody?.totalTransactionCharge,
+        // Vendor info
+        vendor: responseBody?.vendor,
+        vendorTransactionId: responseBody?.vendorTransactionId,
+        // Timestamps
+        createdAt: responseBody?.createdAt,
+        processedAt: responseBody?.processedAt,
+        lastUpdated: responseBody?.lastUpdated,
+        sendAt: responseBody?.sendAt,
+        // Bank details (if applicable)
+        bankId: responseBody?.bankId,
+        bank: responseBody?.bank,
+        bankTransferType: responseBody?.bankTransferType,
+        // Approval info
+        approvalDecision: responseBody?.approvalDecision,
+        decisionMadeBy: responseBody?.decisionMadeBy,
+        decisionMadeByData: responseBody?.decisionMadeByData,
+        decisionMadeAt: responseBody?.decisionMadeAt,
+        decisionRemarks: responseBody?.decisionRemarks,
+        decisions: responseBody?.decisions,
+        // Wallet info
+        wallet: responseBody?.wallet,
+        // Bulk processing
+        bulkId: responseBody?.bulkId,
+        internalRequestId: responseBody?.internalRequestId,
+        // Transactions array
+        transactions: responseBody?.transactions,
       };
     } catch (error) {
       this.logger.error(`Mobile money disbursement failed: ${error.message}`);
@@ -378,12 +510,12 @@ export class IotecService {
         remarks: data.remarks || '',
       };
 
+      // Get valid access token
+      const headers = await this.getHeaders();
+
       const { statusCode, body } = await request('https://pay.iotec.io/api/disbursements/approve', {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json',
-        },
+        headers: headers,
         body: JSON.stringify(payload),
       });
 
@@ -463,8 +595,10 @@ export class IotecService {
         payeeName: responseBody?.payeeName,
         approvalDecision: responseBody?.approvalDecision,
         decisionMadeBy: responseBody?.decisionMadeBy,
+        decisionMadeByData: responseBody?.decisionMadeByData,
         decisionMadeAt: responseBody?.decisionMadeAt,
         decisionRemarks: responseBody?.decisionRemarks,
+        decisions: responseBody?.decisions,
       };
     } catch (error) {
       this.logger.error(`Disbursement approval failed: ${error.message}`);
@@ -488,11 +622,14 @@ export class IotecService {
       await this.redis.set(`transaction:${data.reference}:bank`, data.bankCode, 'EX', 86400);
       await this.redis.set(`transaction:${data.reference}:account`, data.accountNumber, 'EX', 86400);
 
+      // Get valid access token
+      const headers = await this.getHeaders();
+
       const response = await firstValueFrom(
         this.http.post(
           `${this.baseUrl}/wallet/bank-transfer`,
           data,
-          { headers: this.getHeaders() },
+          { headers: headers },
         ),
       );
 
@@ -532,10 +669,13 @@ export class IotecService {
         return JSON.parse(cachedTransactions);
       }
 
+      // Get valid access token
+      const headers = await this.getHeaders();
+
       const response = await firstValueFrom(
         this.http.get(
           `${this.baseUrl}/transactions`,
-          { headers: this.getHeaders() },
+          { headers: headers },
         ),
       );
 
@@ -577,11 +717,12 @@ export class IotecService {
         };
       }
 
+      // Get valid access token
+      const headers = await this.getHeaders();
+
       const { statusCode, body } = await request(`https://pay.iotec.io/api/disbursements/status/${transactionId}`, {
         method: 'GET',
-        headers: {
-          Authorization: `Bearer ${this.apiKey}`,
-        },
+        headers: headers,
       });
 
       const responseBody = await body.json() as any;
@@ -675,9 +816,12 @@ export class IotecService {
         return JSON.parse(cachedTransactions);
       }
 
+      // Get valid access token
+      const headers = await this.getHeaders();
+
       const response = await firstValueFrom(
         this.http.get(`${this.baseUrl}/transactions`, {
-          headers: this.getHeaders(),
+          headers: headers,
           params: {
             limit: params?.limit || 100,
             offset: params?.offset || 0,
@@ -737,11 +881,12 @@ export class IotecService {
       const queryString = queryParams.toString();
       const url = `https://pay.iotec.io/api/disbursements${queryString ? `?${queryString}` : ''}`;
 
+      // Get valid access token
+      const headers = await this.getHeaders();
+
       const { statusCode, body } = await request(url, {
         method: 'GET',
-        headers: {
-          Authorization: `Bearer ${this.apiKey}`,
-        },
+        headers: headers,
       });
 
       const responseBody = await body.json() as any[];
@@ -781,11 +926,12 @@ export class IotecService {
    */
   async getTransactionStatus(transactionId: string) {
     try {
+      // Get valid access token
+      const headers = await this.getHeaders();
+
       const { statusCode, body } = await request(`https://pay.iotec.io/api/disbursements/status/${transactionId}`, {
         method: 'GET',
-        headers: {
-          Authorization: `Bearer ${this.apiKey}`,
-        },
+        headers: headers,
       });
 
       const responseBody = await body.json() as any;
@@ -819,11 +965,12 @@ export class IotecService {
     try {
       const targetWalletId = walletId || this.walletId;
       
+      // Get valid access token
+      const headers = await this.getHeaders();
+
       const { statusCode, body } = await request(`https://pay.iotec.io/api/wallet-balance/${targetWalletId}`, {
         method: 'GET',
-        headers: {
-          Authorization: `Bearer ${this.apiKey}`,
-        },
+        headers: headers,
       });
 
       const responseBody = await body.json() as any;
@@ -870,12 +1017,12 @@ export class IotecService {
         remarks: data.remarks || '',
       };
 
+      // Get valid access token
+      const headers = await this.getHeaders();
+
       const { statusCode, body } = await request('https://pay.iotec.io/api/disbursements/cancel-payment', {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json',
-        },
+        headers: headers,
         body: JSON.stringify(payload),
       });
 
@@ -899,6 +1046,85 @@ export class IotecService {
       this.logger.error(`Failed to cancel disbursement: ${error.message}`);
       throw new HttpException(
         error.response?.data || error.message || 'Failed to cancel disbursement',
+        error.status || HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * Get paged disbursement request history
+   * Uses undici for HTTP requests
+   * Returns paginated disbursement history with full details
+   */
+  async getPagedRequestHistory(params?: {
+    page?: number;
+    pageSize?: number;
+    status?: string;
+    category?: string;
+    fromDate?: string;
+    toDate?: string;
+  }) {
+    try {
+      // Check Redis cache first
+      const cacheKey = `iotec_paged_history:${params?.page || 1}:${params?.pageSize || 10}:${params?.status || 'all'}`;
+      const cachedHistory = await this.redis.get(cacheKey);
+      if (cachedHistory) {
+        this.logger.log('Returning cached paged history');
+        return JSON.parse(cachedHistory);
+      }
+
+      // Build query parameters
+      const queryParams = new URLSearchParams();
+      if (params?.page) queryParams.append('page', String(params.page));
+      if (params?.pageSize) queryParams.append('pageSize', String(params.pageSize));
+      if (params?.status) queryParams.append('status', params.status);
+      if (params?.category) queryParams.append('category', params.category);
+      if (params?.fromDate) queryParams.append('fromDate', params.fromDate);
+      if (params?.toDate) queryParams.append('toDate', params.toDate);
+
+      const queryString = queryParams.toString();
+      const url = `https://pay.iotec.io/api/disbursements/paged-history${queryString ? `?${queryString}` : ''}`;
+
+      // Get valid access token
+      const headers = await this.getHeaders();
+
+      const { statusCode, body } = await request(url, {
+        method: 'GET',
+        headers: headers,
+      });
+
+      const responseBody = await body.json() as any;
+
+      if (statusCode >= 400) {
+        this.logger.error(`Get paged history failed with status ${statusCode}: ${JSON.stringify(responseBody)}`);
+        throw new HttpException(
+          responseBody || 'Get paged history request failed',
+          statusCode,
+        );
+      }
+
+      // Cache for 5 minutes
+      await this.redis.set(
+        cacheKey,
+        JSON.stringify(responseBody),
+        'EX',
+        300,
+      );
+
+      this.logger.log(`Retrieved paged history: page ${responseBody?.page} of ${responseBody?.totalPages}, total ${responseBody?.total} records`);
+      
+      return {
+        page: responseBody?.page,
+        totalPages: responseBody?.totalPages,
+        total: responseBody?.total,
+        data: responseBody?.data,
+        hasPreviousPage: responseBody?.hasPreviousPage,
+        hasNextPage: responseBody?.hasNextPage,
+      };
+    } catch (error) {
+      this.logger.error(`Failed to fetch paged history: ${error.message}`);
+      throw new HttpException(
+        error.response?.data || error.message || 'Failed to fetch paged history',
         error.status || HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }

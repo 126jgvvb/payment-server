@@ -303,6 +303,7 @@ export class IotecController {
     payeeNote?: string;
     currency?: string;
     category?: string;
+    walletId:string;
     transactionChargesCategory?: string;
   }) {
     const externalId = dto.externalId || `collect-${Date.now()}`;
@@ -316,21 +317,57 @@ export class IotecController {
       externalId,
     });
     
-    // Create transaction record using the response structure
+    // Create transaction record using the comprehensive response structure
     const transaction = new TransactionEntity();
     transaction.reference = externalId;
     transaction.phone = dto.payer;
-    transaction.amount = dto.amount;
-    transaction.currency = dto.currency || 'UGX';
+    transaction.amount = result.amount || dto.amount;
+    transaction.currency = result.currency || dto.currency || 'UGX';
     transaction.paymentMethod = 'iotec-collection';
     transaction.status = result.status || 'Pending';
     transaction.metadata = { 
       ...dto, 
       result: result.result,
+      // Core fields
       transactionId: result.transactionId,
       statusCode: result.statusCode,
       statusMessage: result.statusMessage,
       voucherCode: result.code,
+      // Charges
+      transactionCharge: result.transactionCharge,
+      vendorCharge: result.vendorCharge,
+      totalTransactionCharge: result.totalTransactionCharge,
+      // Vendor info
+      vendor: result.vendor,
+      vendorTransactionId: result.vendorTransactionId,
+      // Payee info
+      payee: result.payee,
+      payeeName: result.payeeName,
+      payeeUploadName: result.payeeUploadName,
+      nameStatus: result.nameStatus,
+      // Timestamps
+      createdAt: result.createdAt,
+      processedAt: result.processedAt,
+      lastUpdated: result.lastUpdated,
+      sendAt: result.sendAt,
+      // Bank details
+      bankId: result.bankId,
+      bank: result.bank,
+      bankTransferType: result.bankTransferType,
+      // Approval info
+      approvalDecision: result.approvalDecision,
+      decisionMadeBy: result.decisionMadeBy,
+      decisionMadeByData: result.decisionMadeByData,
+      decisionMadeAt: result.decisionMadeAt,
+      decisionRemarks: result.decisionRemarks,
+      decisions: result.decisions,
+      // Wallet info
+      wallet: result.wallet,
+      // Bulk processing
+      bulkId: result.bulkId,
+      internalRequestId: result.internalRequestId,
+      // Transactions array
+      transactions: result.transactions,
     };
     await this.transactionRepository.save(transaction);
     
@@ -345,6 +382,7 @@ export class IotecController {
     payeeEmail?: string;
     payerNote?: string;
     payeeNote?: string;
+    payee:string;
     currency?: string;
     bankId?: string;
     bankIdentificationCode?: string;
@@ -508,6 +546,22 @@ export class IotecController {
     this.logger.log(`Disbursement ${dto.disbursementId} cancellation requested, success: ${result.success}`);
     
     return result;
+  }
+
+  /**
+   * Get paged disbursement request history
+   */
+  @Get('disbursements/history')
+  async getPagedRequestHistory(@Body() params?: {
+    page?: number;
+    pageSize?: number;
+    status?: string;
+    category?: string;
+    fromDate?: string;
+    toDate?: string;
+  }) {
+    const history = await this.iotecService.getPagedRequestHistory(params);
+    return history;
   }
 
   @Get('transactions')
