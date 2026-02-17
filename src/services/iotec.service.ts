@@ -340,6 +340,7 @@ export class IotecService {
       // Cache the transaction result using the response structure
       // Response has: id, status, statusCode, statusMessage, transactions[], etc.
       const transactionId = responseBody?.id;
+      
       if (transactionId) {
         await this.redis.set(
           `transaction:${transactionId}:status`,
@@ -347,150 +348,45 @@ export class IotecService {
           'EX',
           86400,
         );
-        await this.redis.set(
-          `transaction:${transactionId}:phone`,
-          data.phoneNumber,
-          'EX',
-          86400,
-        );
-        await this.redis.set(
-          `transaction:${transactionId}:reference`,
-          externalId,
-          'EX',
-          86400,
-        );
-        // Cache additional useful fields from response
-        if (responseBody.statusCode) {
-          await this.redis.set(
-            `transaction:${transactionId}:statusCode`,
-            responseBody.statusCode,
-            'EX',
-            86400,
-          );
-        }
-        if (responseBody.vendorTransactionId) {
-          await this.redis.set(
-            `transaction:${transactionId}:vendorTransactionId`,
-            responseBody.vendorTransactionId,
-            'EX',
-            86400,
-          );
-        }
-      }
-
-      this.logger.log(`Mobile money disbursement initiated: ${externalId} to ${data.phoneNumber}, status: ${responseBody?.status}, statusCode: ${responseBody?.statusCode}`);
-      
-      // If disbursement requires approval (status is AwaitingApproval), auto-approve it
-      if (responseBody?.status === 'AwaitingApproval' && responseBody?.id) {
-        this.logger.log(`Disbursement ${responseBody.id} requires approval, auto-approving...`);
-        const approvalResult = await this.approveOrRejectDisbursement({
-          disbursementId: responseBody.id,
-          decision: true,
-          remarks: 'Auto-approved by payment server',
-        });
         
-        // Return combined result with approval info - comprehensive response
-        return {
-          result: approvalResult.result,
-          // Core transaction fields
-          transactionId: approvalResult.transactionId,
-          status: approvalResult.status,
-          statusCode: approvalResult.statusCode,
-          statusMessage: approvalResult.statusMessage,
-          // Transaction details
-          amount: approvalResult.amount,
-          currency: approvalResult.currency,
-          externalId: responseBody?.externalId,
-          category: responseBody?.category,
-          paymentChannel: responseBody?.paymentChannel,
-          // Payee/Payer info
-          payee: approvalResult.payee,
-          payeeName: approvalResult.payeeName,
-          payeeUploadName: responseBody?.payeeUploadName,
-          nameStatus: responseBody?.nameStatus,
-          // Charges
-          transactionCharge: responseBody?.transactionCharge,
-          vendorCharge: responseBody?.vendorCharge,
-          totalTransactionCharge: responseBody?.totalTransactionCharge,
-          // Vendor info
-          vendor: responseBody?.vendor,
-          vendorTransactionId: approvalResult.vendorTransactionId,
-          // Timestamps
-          createdAt: responseBody?.createdAt,
-          processedAt: responseBody?.processedAt,
-          lastUpdated: responseBody?.lastUpdated,
-          sendAt: responseBody?.sendAt,
-          // Bank details (if applicable)
-          bankId: responseBody?.bankId,
-          bank: responseBody?.bank,
-          bankTransferType: responseBody?.bankTransferType,
-          // Approval info
-          approvalDecision: approvalResult.approvalDecision,
-          decisionMadeBy: approvalResult.decisionMadeBy,
-          decisionMadeByData: approvalResult.decisionMadeByData,
-          decisionMadeAt: approvalResult.decisionMadeAt,
-          decisionRemarks: approvalResult.decisionRemarks,
-          decisions: responseBody?.decisions,
-          // Wallet info
-          wallet: responseBody?.wallet,
-          // Bulk processing
-          bulkId: responseBody?.bulkId,
-          internalRequestId: responseBody?.internalRequestId,
-          // Transactions array
-          transactions: responseBody?.transactions,
-        };
+        // Poll for transaction status until it's Success or Failed
+        const maxAttempts = 10;
+        const pollInterval = 3000; // 3 seconds
+        
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+          // Wait for 3 seconds before checking status (except for first attempt)
+          if (attempt > 1) {
+            await new Promise(resolve => setTimeout(resolve, pollInterval));
+          }
+          
+          const statusResult = await this.getTransactionStatus(transactionId);
+          const currentStatus = statusResult?.status;
+          
+          this.logger.log(`Transaction ${transactionId} status check ${attempt}/${maxAttempts}: ${currentStatus}`);
+          
+          // Check if transaction is complete
+          if (currentStatus === 'Success' || currentStatus === 'Failed' || currentStatus === 'Completed' || currentStatus === 'Rejected') {
+            // Update the response body with final status from statusResult
+            return {
+              ...responseBody,
+              ...statusResult,
+              status: currentStatus,
+            };
+          }
+          
+          // If we've reached max attempts, return the last known status
+          if (attempt === maxAttempts) {
+            this.logger.warn(`Transaction ${transactionId} status polling timed out after ${maxAttempts} attempts`);
+            return {
+              ...responseBody,
+              ...statusResult,
+              status: currentStatus,
+            };
+          }
+        }
       }
       
-      // Return comprehensive response matching IOTEC API structure
-      return {
-        result: responseBody,
-        // Core transaction fields
-        transactionId: responseBody?.id,
-        status: responseBody?.status,
-        statusCode: responseBody?.statusCode,
-        statusMessage: responseBody?.statusMessage,
-        // Transaction details
-        amount: responseBody?.amount,
-        currency: responseBody?.currency,
-        externalId: responseBody?.externalId,
-        category: responseBody?.category,
-        paymentChannel: responseBody?.paymentChannel,
-        // Payee/Payer info
-        payee: responseBody?.payee,
-        payeeName: responseBody?.payeeName,
-        payeeUploadName: responseBody?.payeeUploadName,
-        nameStatus: responseBody?.nameStatus,
-        // Charges
-        transactionCharge: responseBody?.transactionCharge,
-        vendorCharge: responseBody?.vendorCharge,
-        totalTransactionCharge: responseBody?.totalTransactionCharge,
-        // Vendor info
-        vendor: responseBody?.vendor,
-        vendorTransactionId: responseBody?.vendorTransactionId,
-        // Timestamps
-        createdAt: responseBody?.createdAt,
-        processedAt: responseBody?.processedAt,
-        lastUpdated: responseBody?.lastUpdated,
-        sendAt: responseBody?.sendAt,
-        // Bank details (if applicable)
-        bankId: responseBody?.bankId,
-        bank: responseBody?.bank,
-        bankTransferType: responseBody?.bankTransferType,
-        // Approval info
-        approvalDecision: responseBody?.approvalDecision,
-        decisionMadeBy: responseBody?.decisionMadeBy,
-        decisionMadeByData: responseBody?.decisionMadeByData,
-        decisionMadeAt: responseBody?.decisionMadeAt,
-        decisionRemarks: responseBody?.decisionRemarks,
-        decisions: responseBody?.decisions,
-        // Wallet info
-        wallet: responseBody?.wallet,
-        // Bulk processing
-        bulkId: responseBody?.bulkId,
-        internalRequestId: responseBody?.internalRequestId,
-        // Transactions array
-        transactions: responseBody?.transactions,
-      };
+      return responseBody;
     } catch (error) {
       this.logger.error(`Mobile money disbursement failed: ${error.message}`);
       throw new HttpException(

@@ -20,7 +20,7 @@ import { ExternalApiService } from '../services/external-api/external-api.servic
 import { UserService } from '../services/user.service';
 import { WalletEntity } from '../entities/wallet.entity';
 import { PaymentEntity } from '../entities/payment.entity';
-import { WithdrawalEntity } from '../entities/withdrawal.entity';
+import { WithdrawalEntity, WithdrawalStatus } from '../entities/withdrawal.entity';
 import { CreateWalletDto } from '../dtos/wallet.dto';
 
 // DTO interfaces for client operations
@@ -322,6 +322,94 @@ export class UsersController {
   async getClientWithdrawals(@Request() req) {
     const userId = req.user?.userId;
     return this.withdrawalService.getWithdrawalsByUserId(userId);
+  }
+
+  /**
+   * Client withdrawal request - creates a withdrawal and triggers disbursement
+   * @param req - Request object with user data
+   * @param withdrawalData - Withdrawal data (amount, phoneNumber, provider)
+   * @returns Promise<{ success: boolean; message: string; withdrawal?: WithdrawalEntity; disbursement?: any }>
+   */
+  @Post('withdraw')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.CREATED)
+  async requestWithdrawal(
+    @Request() req,
+    @Body() withdrawalData: { amount: number; phoneNumber: string; provider?: 'MTN' | 'AIRTEL' },
+  ) {
+    const userId = req.user?.userId;
+    const { amount, phoneNumber, provider = 'MTN' } = withdrawalData;
+
+    // Validate amount
+    if (!amount || amount < 10000) {
+      return { success: false, message: 'Minimum withdrawal amount is UGX 10,000' };
+    }
+
+    // Get user's wallet
+    const wallet = await this.walletService.findByUserId(userId);
+    if (!wallet) {
+      return { success: false, message: 'Wallet not found' };
+    }
+
+    // Check balance
+    if (wallet.balance < amount) {
+      return { success: false, message: 'Insufficient balance' };
+    }
+
+    // Deduct from wallet
+    await this.walletService.updateBalance(wallet.id, -amount);
+
+    // Create withdrawal record
+    const withdrawal = await this.withdrawalService.createWithdrawal(
+      userId,
+      amount,
+      phoneNumber,
+      WithdrawalStatus.REQUESTED,
+    );
+
+    // Trigger disbursement via iotec controller's mobile-money endpoint
+    try {
+      // Call the iotec endpoint via HTTP
+      const iotecResponse = await fetch('https://payment-server-production-9b18.up.railway.app/iotec/mobile-money', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          amount: amount,
+          phoneNumber: phoneNumber,
+          provider: provider,
+          reference: `withdrawal-${withdrawal.id}`,
+        }),
+      });
+      
+      const disbursementResult = await iotecResponse.json();
+
+      // Update withdrawal status based on disbursement result
+      if (disbursementResult.status === 'Success') {
+        await this.withdrawalService.updateStatus(withdrawal.id, WithdrawalStatus.PAID);
+      } else if (disbursementResult.status === 'Pending') {
+        await this.withdrawalService.updateStatus(withdrawal.id, WithdrawalStatus.APPROVED);
+      }
+
+      return {
+        success: true,
+        message: 'Withdrawal request submitted successfully',
+        withdrawal,
+        disbursement: disbursementResult,
+      };
+    } catch (error) {
+      // If disbursement fails, mark as failed but keep the withdrawal record
+      await this.withdrawalService.updateStatus(withdrawal.id, WithdrawalStatus.REJECTED);
+      // Reverse the wallet deduction
+      await this.walletService.updateBalance(wallet.id, amount);
+      
+      return {
+        success: false,
+        message: 'Withdrawal failed: ' + (error.message || 'Unknown error'),
+        withdrawal,
+      };
+    }
   }
 
    /**

@@ -24,6 +24,7 @@ export class IotecController {
   private readonly withdrawalService: WithdrawalService;
   private readonly smsService:OtpService;
   private readonly userWallet:WalletService;
+  private readonly CURRENT_WALLET=process.env.IOTEC_WALLET_ID;
 
   constructor(
     private readonly iotecService: IotecService,
@@ -53,12 +54,12 @@ export class IotecController {
     this.logger.log(`Received webhook: ${JSON.stringify(body)}`);
     this.logger.log(`Received signature: ${signature}`);
 
-    /* Idempotency check - prevent replay attacks
+    // Idempotency check - prevent replay attacks
     if (await this.redis.get(`webhook:${body.id}`)) {
       throw new UnauthorizedException('Replay detected');
     }
     await this.redis.set(`webhook:${body.id}`, '1', 'EX', 600);
-    */
+    
 
     //Verify Signature
    // this.webhookService.verifySignature(req.rawBody, signature);
@@ -156,16 +157,18 @@ export class IotecController {
           await this.redis.set(`cached-voucher`, 'zero'); 
           await this.redis.set(`cached-voucher`,valueObj.code, 'EX', 30); 
 
-          // Transfer funds to the user's wallet
-          await this.ledger.transfer(
-            PLATFORM_WALLET,
-            userWallet.id,
-            amount,
-            transactionId,
-          );
-
+          // Apply charge of 1000 and credit remaining to user's wallet
+          const CHARGE_AMOUNT = 1000;
+          const amountNum = parseFloat(amount);
+          const netAmount = amountNum - CHARGE_AMOUNT;
           
-          this.logger.log(`Transferred ${amount} to wallet ${userWallet.id} for transaction ${transactionId}`);
+          if (netAmount > 0) {
+            // Directly credit the user's wallet without affecting platform wallet
+            await this.walletService.updateBalance(userWallet.id, netAmount);
+            this.logger.log(`Credited ${netAmount} to wallet ${userWallet.id} (charge: ${CHARGE_AMOUNT}) for transaction ${transactionId}`);
+          } else {
+            this.logger.warn(`Amount ${amount} is less than charge ${CHARGE_AMOUNT}, no credit applied`);
+          }
         
           console.log('sms results:',valueObj);
           return { status: 'ok',smsResult:valueObj.smsResults,code:valueObj.code };
@@ -208,17 +211,17 @@ export class IotecController {
     }
 
     // Verify Signature
-    this.webhookService.verifySignature(req.rawBody, signature);
+   // this.webhookService.verifySignature(req.rawBody, signature);
 
     // Extract disbursement details from webhook payload
-    const eventType = body.event;
-    const transactionId = body.data?.transactionId;
-    const status = body.data?.status;
-    const amount = body.data?.amount;
-    const phone = body.data?.phone;
-    const reference = body.data?.reference;
-    const destination = body.data?.destination || body.data?.accountNumber || phone;
-    const userId = body.data?.userId;
+   // const eventType = body.event;
+    const transactionId = body.transactionId;
+    const status = body.status;
+    const amount = body.amount;
+    const phone = body.phone;
+    const reference = body.reference;
+    const destination = body.destination || body.accountNumber || phone;
+    const userId = body.userId;
 
     // Create or update transaction record
     let transaction = await this.transactionRepository.findByReference(transactionId);
@@ -278,7 +281,7 @@ export class IotecController {
     }
 
     // Handle successful disbursement
-    if (eventType === 'disbursement.completed' || status === 'SUCCESSFUL') {
+    if ( status === 'Success') {
       this.logger.log(`Disbursement ${transactionId} completed successfully`);
       
       // Retrieve cached metadata
@@ -291,7 +294,7 @@ export class IotecController {
     }
 
     // Handle failed disbursement
-    if (eventType === 'disbursement.failed' || status === 'FAILED') {
+    if (status === 'Failed') {
       this.logger.warn(`Disbursement ${transactionId} failed with status: ${status}`);
       
       // Optionally reverse the ledger entry if funds were already deducted
