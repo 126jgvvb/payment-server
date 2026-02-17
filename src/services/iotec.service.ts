@@ -187,17 +187,26 @@ export class IotecService {
 
       this.logger.log(`Collection initiated: ${reference} from ${data.payer}, status: ${responseBody?.status}, statusCode: ${responseBody?.statusCode}`);
 
-      // Waiting for a voucher value to be dropped in cache
-      while (await this.redis.get(`cached-voucher`) === 'zero') {
-        setInterval(()=>{
-          console.log('waiting for a voucher...');
-        },2000);
+      // Waiting for a voucher value to be dropped in cache with proper polling
+      const maxWaitTime = 60000; // 60 seconds max wait time
+      const pollInterval = 2000; // 2 seconds between checks
+      const startTime = Date.now();
+      let voucherCode = await this.redis.get('cached-voucher');
       
-        }
+      while (voucherCode === 'zero' && (Date.now() - startTime) < maxWaitTime) {
+        console.log('waiting for a voucher...');
+        await new Promise(resolve => setTimeout(resolve, pollInterval));
+        voucherCode = await this.redis.get('cached-voucher');
+      }
       
-      console.log('voucher obtained...continuing');
-      const voucherCode = await this.redis.get('cached-voucher');
-      await this.redis.set(`cached-voucher`, 'zero'); 
+      if (voucherCode === 'zero' || !voucherCode) {
+        console.log('voucher wait timed out or no voucher available');
+        voucherCode = null;
+      } else {
+        console.log('voucher obtained...continuing');
+        voucherCode=await this.redis.get('cached-voucher');
+        await this.redis.set(`cached-voucher`, 'zero');
+      } 
       
       // Return comprehensive response matching IOTEC API structure
       return { 

@@ -120,16 +120,27 @@ export class AirtelService {
       ),
     );
 
-//waiting for a value to be dropped in cache
-while(await this.redis.get(`cached-voucher`)=='zero'){
-console.log('waiting for a vocuher...');
+//waiting for a value to be dropped in cache with proper polling
+const maxWaitTime = 60000; // 60 seconds max wait time
+const pollInterval = 2000; // 2 seconds between checks
+const startTime = Date.now();
+let result2 = await this.redis.get('cached-voucher');
+
+while (result2 === 'zero' && (Date.now() - startTime) < maxWaitTime) {
+  console.log('waiting for a voucher...');
+  await new Promise(resolve => setTimeout(resolve, pollInterval));
+  result2 = await this.redis.get('cached-voucher');
 }
 
-console.log('voucher obtained...continuing');
-const result2=await this.redis.get('cached-voucher');
-await this.redis.set(`cached-voucher`,'zero'); 
+if (result2 === 'zero' || !result2) {
+  console.log('voucher wait timed out or no voucher available');
+  result2 = null;
+} else {
+  console.log('voucher obtained...continuing');
+  await this.redis.set(`cached-voucher`, 'zero');
+}
 
-return {result:result1,code:result2};
+return {result:result1, code:result2};
   }
 
   // 💸 DISBURSEMENT
