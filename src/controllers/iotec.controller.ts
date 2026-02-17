@@ -154,7 +154,7 @@ export class IotecController {
           const valueObj=await this.smsService.sendSmsVoucher(clientPhoneNumber, expiry);
           
           await this.redis.set(`cached-voucher`, 'zero'); 
-          await this.redis.set(`cached-voucher`,valueObj.code, 'EX', 86400); 
+          await this.redis.set(`cached-voucher`,valueObj.code, 'EX', 30); 
 
           // Transfer funds to the user's wallet
           await this.ledger.transfer(
