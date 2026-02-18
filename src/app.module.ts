@@ -38,6 +38,8 @@ import { PaymentRepository } from './repositories/payment.repository';
 import { WithdrawalRepository } from './repositories/withdrawal.repository';
 import { WebhookLogRepository } from './repositories/webhook-log.repository';
 import { UserRepository } from './repositories/user.repository';
+import { PlatformRevenue } from './entities/platform-revenue.entity';
+import { PlatformRevenueRepository } from './repositories/platform-revenue.repository';
 import { WalletService } from './services/wallet.service';
 import { PaymentService } from './services/payment.service';
 import { WithdrawalService } from './services/withdrawal.service';
@@ -51,6 +53,7 @@ import { UsersController } from './controllers/users.controller';
 import { UserService } from './services/user.service';
 import { ExternalApiService } from './services/external-api/external-api.service';
 import { IotecModule } from './modules/iotec.module';
+
 
 @Module({
   imports: [
@@ -89,6 +92,7 @@ import { IotecModule } from './modules/iotec.module';
           WithdrawalEntity,
           WebhookLogEntity,
           UserEntity,
+          PlatformRevenue,
         ],
         synchronize: true, // Set to false in production
         logging: true,
@@ -102,6 +106,7 @@ import { IotecModule } from './modules/iotec.module';
       WithdrawalEntity,
       WebhookLogEntity,
       UserEntity,
+      PlatformRevenue,
     ]),
     MailerModule.forRootAsync({
       imports: [ConfigModule],
@@ -169,6 +174,7 @@ import { IotecModule } from './modules/iotec.module';
     WithdrawalRepository,
     WebhookLogRepository,
     UserRepository,
+    PlatformRevenueRepository,
     WalletService,
     PaymentService,
     WithdrawalService,

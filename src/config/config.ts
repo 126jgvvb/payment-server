@@ -26,5 +26,7 @@ export default {
     adminPassword: process.env.ADMIN_PASSWORD || '',
     controllerID: process.env.CONTROLLER_ID || '',
 
-    decryptionSecretKey: process.env.DECRYPTION_SECRET_KEY || ''
+    decryptionSecretKey: process.env.DECRYPTION_SECRET_KEY || '',
+
+    platformRevenueConstant: 400
 }

@@ -19,6 +19,8 @@ import { WithdrawalService } from '../services/withdrawal.service';
 import { ExternalApiService } from '../services/external-api/external-api.service';
 import { UserService } from '../services/user.service';
 import { IotecService } from '../services/iotec.service';
+import { PlatformRevenueRepository } from '../repositories/platform-revenue.repository';
+import config from '../config/config';
 import { WalletEntity } from '../entities/wallet.entity';
 import { PaymentEntity } from '../entities/payment.entity';
 import { WithdrawalEntity, WithdrawalStatus } from '../entities/withdrawal.entity';
@@ -54,6 +56,7 @@ export class UsersController {
     private readonly externalApiService: ExternalApiService,
     private readonly userService: UserService,
     private readonly iotecService: IotecService,
+    private readonly platformRevenueRepository: PlatformRevenueRepository,
   ) {}
 
   /**
@@ -402,9 +405,13 @@ export class UsersController {
           disbursement: disbursementResult,
         };
       } else if (disbursementResult.status === 'Scheduled') {
-        // For pending status, still deduct but mark as APPROVED
+        // For scheduled status, deduct from wallet, update platform revenue, and mark as APPROVED
         await this.walletService.updateBalance(wallet.id, -amount);
         console.log(`Deducted ${amount} from wallet ${wallet.id} (pending disbursement)`);
+        
+        // Update platform revenue with the constant from environment
+        const platformRevenue = await this.platformRevenueRepository.addRevenue(config.platformRevenueConstant);
+        console.log(`Platform revenue updated: +${config.platformRevenueConstant}, new total: ${platformRevenue.currentRevenue}`);
         
         await this.withdrawalService.updateStatus(withdrawal.id, WithdrawalStatus.APPROVED);
         
@@ -413,6 +420,7 @@ export class UsersController {
           message: 'Withdrawal request submitted - pending processing',
           withdrawal,
           disbursement: disbursementResult,
+          platformRevenue: platformRevenue.currentRevenue,
         };
       } else {
         // Disbursement failed - no deduction needed, mark as rejected

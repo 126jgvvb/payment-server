@@ -11,6 +11,7 @@ import { PaymentRepository } from '../repositories/payment.repository';
 import { WithdrawalRepository } from '../repositories/withdrawal.repository';
 import { WebhookLogRepository } from '../repositories/webhook-log.repository';
 import { UserRepository } from '../repositories/user.repository';
+import { PlatformRevenueRepository } from '../repositories/platform-revenue.repository';
 import { TransactionEntity } from '../entities/transaction.entity';
 import { LedgerEntity } from '../entities/ledger.entity';
 import { WalletEntity } from '../entities/wallet.entity';
@@ -18,6 +19,7 @@ import { PaymentEntity } from '../entities/payment.entity';
 import { WithdrawalEntity } from '../entities/withdrawal.entity';
 import { WebhookLogEntity } from '../entities/webhook-log.entity';
 import { UserEntity } from '../entities/user.entity';
+import { PlatformRevenue } from '../entities/platform-revenue.entity';
 
 @Controller('dashboard')
 export class DashboardController {
@@ -29,6 +31,7 @@ export class DashboardController {
     private readonly withdrawalRepository: WithdrawalRepository,
     private readonly webhookLogRepository: WebhookLogRepository,
     private readonly userRepository: UserRepository,
+    private readonly platformRevenueRepository: PlatformRevenueRepository,
   ) {}
 
   /**
@@ -232,5 +235,24 @@ export class DashboardController {
       order: { createdAt: 'DESC' },
       take: 20,
     });
+  }
+
+  /**
+   * Gets platform revenue data
+   * @returns Promise<object>
+   */
+  @Get('platform-revenue')
+  @HttpCode(HttpStatus.OK)
+  async getPlatformRevenue(): Promise<object> {
+    const revenue = await this.platformRevenueRepository.getOrCreate();
+    const currentRevenue = await this.platformRevenueRepository.getCurrentRevenue();
+    
+    return {
+      currentRevenue,
+      lastRevenue: revenue.lastRevenue,
+      totalTransactions: revenue.totalTransactions,
+      lastUpdated: revenue.lastUpdated,
+      createdAt: revenue.createdAt,
+    };
   }
 }

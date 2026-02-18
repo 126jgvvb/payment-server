@@ -378,7 +378,7 @@ export class IotecService {
         );
         
         // Poll for transaction status until it's Success or Failed
-        const maxAttempts = 10;
+        const maxAttempts = 3;
         const pollInterval = 3000; // 3 seconds
         
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
