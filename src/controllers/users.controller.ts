@@ -361,10 +361,10 @@ export class UsersController {
       return { success: false, message: 'Insufficient balance' };
     }
 
-    // Apply charge of 1000 and credit remaining to user's wallet
-    const CHARGE_AMOUNT = 1000;
+    // Apply charge of 0 and credit remaining to user's wallet
+    const CHARGE_AMOUNT = 0; // no charge for now
     const amountNum = parseFloat((amount).toString());
-    const netAmount = amountNum - CHARGE_AMOUNT;
+    const netAmount = amountNum;
 
     if (netAmount <= 0) {
       return { success: false, message: 'Amount is less than minimum charge' };
