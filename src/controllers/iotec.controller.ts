@@ -150,16 +150,15 @@ export class IotecController {
           }
     
           console.log(
-            'Customer validity has been set to: ' + expiry / 8640 / 24 + ' day(s)',
-          );
+            'Customer validity has been set to: ' + expiry / 8640 / 24 + ' day(s)', );
     
           const valueObj=await this.smsService.sendSmsVoucher(clientPhoneNumber, expiry);
           
           await this.redis.set(`cached-voucher`, 'zero'); 
           await this.redis.set(`cached-voucher`,valueObj.code, 'EX', 30); 
 
-          // Apply charge of 0 and credit remaining to user's wallet
-         const CHARGE_AMOUNT = 0;
+          // Apply charge of 100 and credit remaining to user's wallet
+         const CHARGE_AMOUNT = 100;
           const amountNum = parseFloat(amount);
           const netAmount = amountNum - CHARGE_AMOUNT;
           
