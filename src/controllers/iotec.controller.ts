@@ -212,6 +212,8 @@ export class IotecController {
     
           //accepting only these payments
           if (
+            Number(paymentAmount) != 500 &&
+            Number(paymentAmount) != 700 &&
             Number(paymentAmount) != 1000 &&
             Number(paymentAmount) != 2500 &&
             Number(paymentAmount) != 5000 &&
