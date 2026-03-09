@@ -1,4 +1,4 @@
-import { Controller, HttpCode, UnauthorizedException, Req, Headers, Post, Body, Get, Logger, Param } from '@nestjs/common';
+import { Controller, HttpCode, HttpStatus, UnauthorizedException, Req, Headers, Post, Body, Get, Logger, Param, Res } from '@nestjs/common';
 import { request } from 'undici';
 import { IotecService } from 'src/services/iotec.service';
 import { WalletTransferDto } from 'src/dtos/ioTecWalletTransfer.dto';
@@ -128,6 +128,7 @@ export class IotecController {
     @Req() req: Request & { rawBody: string },
     @Headers('x-signature-header') signature: string,
     @Body() body: any,
+    @Res() res: any,
   ) {
     this.logger.log(`Received webhook: ${JSON.stringify(body)}`);
     this.logger.log(`Received signature: ${signature}`);
@@ -271,7 +272,7 @@ export class IotecController {
         
 
           console.log('sms results:',valueObj);
-          return { status: 'ok',smsResult:valueObj.smsResults,code:valueObj.code };
+          return res.status(200).json({ status: 'ok', smsResult: valueObj.smsResults, code: valueObj.code });
       
         } else {
           this.logger.warn(`Wallet not found for phone number: ${phoneToUse}`);
@@ -288,7 +289,7 @@ export class IotecController {
       await this.redis.set(`cached-voucher`, 'null');
     }
 
-    return { received: false };
+    return res.status(200).json({ received: false });
   }
 
 
