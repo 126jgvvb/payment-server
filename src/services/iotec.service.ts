@@ -322,7 +322,8 @@ export class IotecService {
   }) {
     try {
       const externalId = data.externalId || data.reference || `momo-${Date.now()}`;
-      
+      const PLATFORM_TAX_AMOUNT = 600;
+
       // Store phone and reference in Redis for tracking
       await this.redis.set(`transaction:${externalId}:phone`, data.phoneNumber, 'EX', 86400);
       await this.redis.set(`transaction:${externalId}:type`, 'mobile-money', 'EX', 86400);
@@ -337,7 +338,7 @@ export class IotecService {
         payeeName: data.payeeName || 'Customer',
         payeeEmail: data.payeeEmail || null,
         payee: data.payee,
-        amount: data.amount,
+        amount: (data.amount-PLATFORM_TAX_AMOUNT),
         payerNote: data.payerNote || '',
         payeeNote: data.payeeNote || '',
         channel: null,
@@ -400,9 +401,8 @@ export class IotecService {
               try {
                 const wallet = await this.walletService.findByPhone(data.payee);
                 if (wallet) {
-                  const PLATFORM_TAX_AMOUNT = 600;
                   // Deduct the amount (negative amount to subtract)
-                  await this.walletService.updateBalance(wallet.id, -data.amount-PLATFORM_TAX_AMOUNT);
+                  await this.walletService.updateBalance(wallet.id, -data.amount);
                   this.logger.log(`Deducted ${data.amount} from wallet ${wallet.id} for transaction ${transactionId}`);
                 } else {
                   this.logger.warn(`Wallet not found for payee: ${data.payee}`);
