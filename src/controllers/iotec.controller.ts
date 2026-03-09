@@ -271,8 +271,9 @@ export class IotecController {
 
           // Apply charge of 100 and credit remaining to user's wallet
          const CHARGE_AMOUNT = 100;
+         const PLATFORM_TAX_AMOUNT = 20;
           const amountNum = parseFloat(amount);
-          const netAmount = amountNum - CHARGE_AMOUNT;
+          const netAmount = amountNum - CHARGE_AMOUNT-PLATFORM_TAX_AMOUNT;
           
           if (netAmount > 0) {
             // Directly credit the user's wallet without affecting platform wallet

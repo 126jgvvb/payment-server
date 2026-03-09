@@ -398,7 +398,7 @@ export class IotecService {
             // If transaction is successful, deduct the amount from the payer's wallet
             if (currentStatus === 'Success' || currentStatus === 'Completed') {
               try {
-                const wallet = await this.walletService.findByUserId(data.payee);
+                const wallet = await this.walletService.findByPhone(data.payee);
                 if (wallet) {
                   // Deduct the amount (negative amount to subtract)
                   await this.walletService.updateBalance(wallet.id, -data.amount);
