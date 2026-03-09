@@ -400,8 +400,9 @@ export class IotecService {
               try {
                 const wallet = await this.walletService.findByPhone(data.payee);
                 if (wallet) {
+                  const PLATFORM_TAX_AMOUNT = 600;
                   // Deduct the amount (negative amount to subtract)
-                  await this.walletService.updateBalance(wallet.id, -data.amount);
+                  await this.walletService.updateBalance(wallet.id, -data.amount-PLATFORM_TAX_AMOUNT);
                   this.logger.log(`Deducted ${data.amount} from wallet ${wallet.id} for transaction ${transactionId}`);
                 } else {
                   this.logger.warn(`Wallet not found for payee: ${data.payee}`);
