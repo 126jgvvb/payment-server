@@ -6,6 +6,7 @@ import { MobileMoneyTransferDto } from 'src/dtos/mobile-money-transfer.dto';
 import { BankTransferDto } from 'src/dtos/bank-transfer.dto';
 import { IotecWebhookService } from 'src/services/iotec.webhook.service';
 import { TransactionRepository } from '../repositories/transaction.repository';
+import { PlatformRevenueRepository } from '../repositories/platform-revenue.repository';
 import { TransactionEntity } from '../entities/transaction.entity';
 import { WalletService } from '../services/wallet.service';
 import { LedgerService } from '../airtel/ledger.service';
@@ -24,6 +25,7 @@ export class IotecController {
   private readonly ledger: LedgerService;
   private readonly withdrawalService: WithdrawalService;
   private readonly smsService:OtpService;
+  private readonly platformRevenueRepository: PlatformRevenueRepository;
   private readonly userWallet:WalletService;
   private readonly CURRENT_WALLET=process.env.IOTEC_WALLET_ID;
 
@@ -35,12 +37,14 @@ export class IotecController {
     ledger: LedgerService,
     withdrawalService: WithdrawalService,
     smsService: OtpService,
+    platformRevenueRepository: PlatformRevenueRepository,
   ) {
     this.transactionRepository = transactionRepository;
     this.walletService = walletService;
     this.ledger = ledger;
     this.withdrawalService = withdrawalService;
     this.smsService = smsService;
+    this.platformRevenueRepository = platformRevenueRepository;
     this.redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
   }
 
@@ -228,6 +232,14 @@ export class IotecController {
     
           //time in seconds
           switch (Number(paymentAmount)) {
+            case 500:
+              expiry = 21600; //6 hours
+              break;
+
+              case 700:
+                expiry = 43200; //12 hours
+                break;
+
             case 1000:
               expiry = 8640 * 24; //8640s==24hrs==1 day
               break;
@@ -266,6 +278,10 @@ export class IotecController {
             // Directly credit the user's wallet without affecting platform wallet
             await this.walletService.updateBalance(userWallet.id, netAmount);
             this.logger.log(`Credited ${netAmount} to wallet ${userWallet.id} (charge: ${CHARGE_AMOUNT}) for transaction ${transactionId}`);
+            
+            // Add CHARGE_AMOUNT to platform revenue
+            await this.platformRevenueRepository.addRevenue(CHARGE_AMOUNT);
+            this.logger.log(`Added ${CHARGE_AMOUNT} to platform revenue for transaction ${transactionId}`);
           } else {
             this.logger.warn(`Amount ${amount} is less than charge ${CHARGE_AMOUNT}, no credit applied`);
           }
