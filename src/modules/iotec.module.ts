@@ -9,10 +9,12 @@ import { TransactionEntity } from '../entities/transaction.entity';
 import { LedgerEntity } from '../entities/ledger.entity';
 import { WalletEntity } from '../entities/wallet.entity';
 import { WithdrawalEntity } from '../entities/withdrawal.entity';
+import { PlatformRevenue } from '../entities/platform-revenue.entity';
 import { TransactionRepository } from '../repositories/transaction.repository';
 import { LedgerRepository } from '../repositories/ledger.repository';
 import { WalletRepository } from '../repositories/wallet.repository';
 import { WithdrawalRepository } from '../repositories/withdrawal.repository';
+import { PlatformRevenueRepository } from '../repositories/platform-revenue.repository';
 import { WalletService } from '../services/wallet.service';
 import { LedgerService } from '../airtel/ledger.service';
 import { WithdrawalService } from '../services/withdrawal.service';
@@ -22,7 +24,7 @@ import { NetworkService } from '../services/network-service/network-service.serv
 @Module({
   imports: [
     HttpModule,
-    TypeOrmModule.forFeature([TransactionEntity, LedgerEntity, WalletEntity, WithdrawalEntity]),
+    TypeOrmModule.forFeature([TransactionEntity, LedgerEntity, WalletEntity, WithdrawalEntity, PlatformRevenue]),
     MailerModule,
   ],
   providers: [
@@ -32,6 +34,7 @@ import { NetworkService } from '../services/network-service/network-service.serv
     LedgerRepository,
     WalletRepository,
     WithdrawalRepository,
+    PlatformRevenueRepository,
     WalletService,
     LedgerService,
     WithdrawalService,

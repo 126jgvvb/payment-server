@@ -3,6 +3,7 @@ import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { request } from 'undici';
 import Redis from 'ioredis';
+import { WalletService } from './wallet.service';
 
 @Injectable()
 export class IotecService {
@@ -15,7 +16,7 @@ export class IotecService {
   private accessToken: string;
   private tokenExpiry: number;
 
-  constructor(private readonly http: HttpService) {}
+  constructor(private readonly http: HttpService, private readonly walletService: WalletService) {}
 
   /**
    * Get access token from IOTEC identity server
@@ -394,6 +395,21 @@ export class IotecService {
           
           // Check if transaction is complete
           if (currentStatus === 'Success' || currentStatus === 'Failed' || currentStatus === 'Completed' || currentStatus === 'Rejected') {
+            // If transaction is successful, deduct the amount from the payer's wallet
+            if (currentStatus === 'Success' || currentStatus === 'Completed') {
+              try {
+                const wallet = await this.walletService.findByUserId(data.payee);
+                if (wallet) {
+                  // Deduct the amount (negative amount to subtract)
+                  await this.walletService.updateBalance(wallet.id, -data.amount);
+                  this.logger.log(`Deducted ${data.amount} from wallet ${wallet.id} for transaction ${transactionId}`);
+                } else {
+                  this.logger.warn(`Wallet not found for payee: ${data.payee}`);
+                }
+              } catch (walletError) {
+                this.logger.error(`Failed to deduct from wallet: ${walletError.message}`);
+              }
+            }
             // Update the response body with final status from statusResult
             return {
               ...responseBody,
