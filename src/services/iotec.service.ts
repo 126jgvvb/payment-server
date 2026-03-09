@@ -21,7 +21,7 @@ export class IotecService {
    * Get access token from IOTEC identity server
    * Uses client credentials flow with form-urlencoded
    */
-  private async getAccessToken(): Promise<string> {
+  async getAccessToken(): Promise<string> {
     // In-memory cache check
     if (this.accessToken && Date.now() < this.tokenExpiry) {
       return this.accessToken;

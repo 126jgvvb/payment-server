@@ -1,4 +1,5 @@
 import { Controller, HttpCode, UnauthorizedException, Req, Headers, Post, Body, Get, Logger, Param } from '@nestjs/common';
+import { request } from 'undici';
 import { IotecService } from 'src/services/iotec.service';
 import { WalletTransferDto } from 'src/dtos/ioTecWalletTransfer.dto';
 import { MobileMoneyTransferDto } from 'src/dtos/mobile-money-transfer.dto';
@@ -41,6 +42,83 @@ export class IotecController {
     this.withdrawalService = withdrawalService;
     this.smsService = smsService;
     this.redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
+  }
+
+  /**
+   * Recursively checks the transaction status until it becomes 'Success'
+   * @param transactionId The transaction ID to check
+   * @param walletId The wallet ID for authentication
+   * @param maxAttempts Maximum number of retry attempts (default 10)
+   * @param delayMs Delay between checks in milliseconds (default 3000)
+   * @returns The final status when 'Success' is reached or throws error
+   */
+  private async waitForTransactionSuccess(
+    transactionId: string,
+    walletId: string,
+    maxAttempts: number = 10,
+    delayMs: number = 3000,
+  ): Promise<string> {
+    const jwtToken = await this.iotecService.getAccessToken();
+    
+    let attempts = 0;
+    
+    const checkStatus = async (): Promise<string> => {
+      attempts++;
+      this.logger.log(`Checking transaction status: ${transactionId}, attempt ${attempts}/${maxAttempts}`);
+      
+      try {
+        const { statusCode, body } = await request(
+          `https://pay.iotec.io/api/collections/status/${transactionId}`,
+          {
+            headers: {
+              Authorization: `Bearer ${jwtToken}`,
+            },
+          }
+        );
+        
+        if (statusCode !== 200) {
+          this.logger.warn(`Status check returned code: ${statusCode}`);
+        }
+        
+        const response = await body.json() as {
+          status: string;
+          statusCode?: string;
+          statusMessage?: string;
+        };
+        
+        this.logger.log(`Transaction ${transactionId} status: ${response.status}`);
+        
+        if (response.status === 'Success') {
+          return response.status;
+        }
+        
+        if (response.status === 'Failed') {
+          throw new Error(`Transaction failed: ${response.statusMessage || 'Unknown error'}`);
+        }
+        
+        // If still pending, check max attempts
+        if (attempts >= maxAttempts) {
+          this.logger.warn(`Max attempts reached for transaction ${transactionId}, current status: ${response.status}`);
+          return response.status;
+        }
+        
+        // Wait before next check
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+        
+        return checkStatus();
+      } catch (error) {
+        this.logger.error(`Error checking transaction status: ${error.message}`);
+        
+        if (attempts >= maxAttempts) {
+          throw error;
+        }
+        
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+        return checkStatus();
+      }
+    };
+    
+    return checkStatus();
   }
 
 
@@ -98,6 +176,24 @@ export class IotecController {
     await this.transactionRepository.save(transaction);
 
     console.log('TXN status:',status);
+
+    // If status is not 'Success', wait for it to become 'Success' before proceeding
+    if (status !== 'Success') {
+      try {
+        const walletId = this.CURRENT_WALLET || process.env.IOTEC_WALLET_ID || '';
+        const finalStatus = await this.waitForTransactionSuccess(
+          transactionId,
+          walletId,
+        );
+        this.logger.log(`Transaction ${transactionId} final status: ${finalStatus}`);
+        // Update status in transaction for further processing
+        transaction.status = finalStatus;
+        await this.transactionRepository.save(transaction);
+      } catch (error) {
+        this.logger.error(`Error waiting for transaction success: ${error.message}`);
+        // Continue with original status if wait fails
+      }
+    }
 
     // Handle successful transaction
     if ( status === 'Success') {
