@@ -147,7 +147,7 @@ export class IotecController {
     // 2️ Process Event
  //   const eventType = body.event;
     const transactionId = body.id;
-    const status = body.status;
+    let status = body.status;
     const amount = body.amount;
     const phone = body.payeeNote;
     const clientPhoneNumber=body.payer;
@@ -188,6 +188,7 @@ export class IotecController {
         this.logger.log(`Transaction ${transactionId} final status: ${finalStatus}`);
         // Update status in transaction for further processing
         transaction.status = finalStatus;
+        status=finalStatus;
         await this.transactionRepository.save(transaction);
       } catch (error) {
         this.logger.error(`Error waiting for transaction success: ${error.message}`);
