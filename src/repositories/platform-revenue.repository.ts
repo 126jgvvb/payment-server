@@ -33,7 +33,7 @@ export class PlatformRevenueRepository extends Repository<PlatformRevenue> {
     const revenue = await this.getOrCreate();
     // Addition: lastRevenue = currentRevenue, then currentRevenue = currentRevenue + amount
     revenue.lastRevenue = Number(revenue.currentRevenue);
-    revenue.currentRevenue = revenue.currentRevenue + amount;
+    revenue.currentRevenue =Number(revenue.currentRevenue) + amount;
     revenue.totalTransactions = revenue.totalTransactions + 1;
     return await this.platformRevenueRepository.save(revenue);
   }
