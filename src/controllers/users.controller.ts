@@ -469,6 +469,7 @@ export class UsersController {
       };
     }
 
+    /*
     // Get user's wallet
     const wallet = await this.walletService.findByUserId(userId);
     const VOUCHER_GEN_COST = 5000; // UGX 5000 per voucher generation
@@ -483,6 +484,7 @@ export class UsersController {
 
     // Deduct the voucher generation cost from user's wallet
     await this.walletService.updateBalance(wallet.id, wallet.balance - VOUCHER_GEN_COST);
+*/
 
     // Get user's linked routers
     const routersResponse = await this.externalApiService.getRouters();
@@ -524,7 +526,7 @@ export class UsersController {
     const vouchers = response.codes.map((tokenData: any, index: number) => ({
       id: `voucher-${Date.now()}-${index}`,
       tokenId: tokenData.voucherCode,
-      router: linkedRouters.length > 0 ? linkedRouters[index % linkedRouters.length].routerIP || 'Unknown Router' : 'Main-Lobby-R1',
+      router: linkedRouters.length > 0 ? linkedRouters[index % linkedRouters.length].routerIP || 'Unknown Router' : 'Router-N',
       duration: voucherData.duration,
       expiryTime: new Date(Date.now() + this.getDurationMs(voucherData.duration)).toISOString(),
       status: 'active',
