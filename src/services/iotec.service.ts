@@ -299,6 +299,192 @@ export class IotecService {
   }
 
   /**
+   * Collect funds from client for voucher print - polls for transaction status until Success
+   * This method does NOT wait for a voucher in Redis cache
+   * Instead, it continuously checks the transaction status until status == Success
+   */
+  async collectVoucherPrintFunds(data: {
+    amount: number;
+    payer: string;
+    externalId: string;
+    payerNote?: string;
+    payeeNote?: string;
+    currency?: string;
+    category?: string;
+    walletId: string;
+    transactionChargesCategory?: string;
+  }) {
+    try {
+      const reference = data.externalId || `collect-${Date.now()}`;
+      
+      // Store reference in Redis for tracking
+      await this.redis.set(`transaction:${reference}:type`, 'voucher-collection', 'EX', 86400);
+      await this.redis.set(`transaction:${reference}:payer`, data.payer, 'EX', 86400);
+
+      const payload = {
+        category: data.category || 'MobileMoney',
+        currency: data.currency || 'UGX',
+        walletId: data.walletId,
+        externalId: data.externalId,
+        payer: data.payer,
+        payerNote: data.payerNote || 'Payment collection for voucher',
+        amount: data.amount,
+        payeeNote: data.payeeNote || '',
+        channel: null,
+        transactionChargesCategory: data.transactionChargesCategory || 'ChargeWallet',
+      };
+
+      // Get valid access token
+      const headers = await this.getHeaders();
+
+      const { statusCode, body } = await request('https://pay.iotec.io/api/collections/collect', {
+        method: 'POST',
+        headers: headers,
+        body: JSON.stringify(payload),
+      });
+
+      const responseBody = await body.json() as any;
+
+      if (statusCode >= 400) {
+        this.logger.error(`Voucher collection failed with status ${statusCode}: ${JSON.stringify(responseBody)}`);
+        throw new HttpException(
+          responseBody || 'Collection request failed',
+          statusCode,
+        );
+      }
+
+      // Cache the initial transaction result
+      const transactionId = responseBody?.id;
+      if (transactionId) {
+        await this.redis.set(
+          `transaction:${transactionId}:status`,
+          responseBody.status || 'Pending',
+          'EX',
+          86400,
+        );
+        await this.redis.set(
+          `transaction:${transactionId}:reference`,
+          reference,
+          'EX',
+          86400,
+        );
+        await this.redis.set(
+          `transaction:${transactionId}:payer`,
+          data.payer,
+          'EX',
+          86400,
+        );
+      }
+
+      this.logger.log(`Voucher collection initiated: ${reference} from ${data.payer}, transactionId: ${transactionId}`);
+
+      // Poll for transaction status until Success
+      const maxAttempts = 30; // 30 attempts max (60 seconds with 2s interval)
+      const pollInterval = 2000; // 2 seconds between checks
+      
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        // Wait 2 seconds before checking status (except for first attempt)
+        if (attempt > 1) {
+          await new Promise(resolve => setTimeout(resolve, pollInterval));
+        }
+        
+        const statusResult = await this.getTransactionStatus(transactionId);
+        const currentStatus = statusResult?.status;
+        const currentStatusCode = statusResult?.statusCode;
+        
+        this.logger.log(`Voucher transaction ${transactionId} status check ${attempt}/${maxAttempts}: ${currentStatus} (code: ${currentStatusCode})`);
+        
+        // Check if transaction is successful
+        if (currentStatus === 'Success' || currentStatusCode === 200) {
+          // Update Redis cache with success status
+          await this.redis.set(
+            `transaction:${transactionId}:status`,
+            'Success',
+            'EX',
+            86400,
+          );
+          await this.redis.set(
+            `transaction:${transactionId}:statusCode`,
+            '200',
+            'EX',
+            86400,
+          );
+          
+          // Return successful response
+          return {
+            result: responseBody,
+            code: 200,
+            // Core transaction fields
+            transactionId: responseBody?.id,
+            status: 'Success',
+            statusCode: 200,
+            statusMessage: 'Payment collected successfully',
+            // Transaction details
+            amount: responseBody?.amount,
+            currency: responseBody?.currency,
+            externalId: responseBody?.externalId,
+            category: responseBody?.category,
+            paymentChannel: responseBody?.paymentChannel,
+            // Payee/Payer info
+            payee: responseBody?.payee,
+            payeeName: responseBody?.payeeName,
+            payer: data.payer,
+            // Charges
+            transactionCharge: responseBody?.transactionCharge,
+            vendorCharge: responseBody?.vendorCharge,
+            totalTransactionCharge: responseBody?.totalTransactionCharge,
+            // Vendor info
+            vendor: responseBody?.vendor,
+            vendorTransactionId: responseBody?.vendorTransactionId,
+            // Timestamps
+            createdAt: responseBody?.createdAt,
+            processedAt: responseBody?.processedAt,
+            lastUpdated: responseBody?.lastUpdated,
+          };
+        }
+        
+        // Check if transaction has failed
+        if (currentStatus === 'Failed' || currentStatus === 'Rejected' || currentStatusCode === 400 || currentStatusCode === 500) {
+          this.logger.error(`Voucher collection failed: ${currentStatus}`);
+          return {
+            result: responseBody,
+            code: currentStatusCode || 400,
+            transactionId: responseBody?.id,
+            status: currentStatus || 'Failed',
+            statusCode: currentStatusCode || 400,
+            statusMessage: statusResult?.statusMessage || 'Payment failed',
+            amount: responseBody?.amount,
+            currency: responseBody?.currency,
+            externalId: responseBody?.externalId,
+          };
+        }
+      }
+      
+      // If we've reached max attempts without success, return the last known status
+      const lastStatus = await this.getTransactionStatus(transactionId);
+      this.logger.warn(`Voucher collection polling timed out after ${maxAttempts} attempts for transaction ${transactionId}`);
+      return {
+        result: responseBody,
+        code: lastStatus?.statusCode || 202,
+        transactionId: responseBody?.id,
+        status: lastStatus?.status || 'Pending',
+        statusCode: lastStatus?.statusCode || 202,
+        statusMessage: 'Payment is still being processed',
+        amount: responseBody?.amount,
+        currency: responseBody?.currency,
+        externalId: responseBody?.externalId,
+      };
+
+    } catch (error) {
+      this.logger.error(`Voucher collection failed: ${error.message}`);
+      throw new HttpException(
+        error.response?.data || error.message || 'Collection failed',
+        error.status || HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
    * Disburse funds to mobile money via IOTEC disbursements API
    * Uses undici for HTTP requests
    * Response structure includes: id, status, statusCode, statusMessage, transactions[], etc.

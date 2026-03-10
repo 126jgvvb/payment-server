@@ -510,6 +510,67 @@ export class IotecController {
     return result;
   }
 
+  /**
+   * Collect funds from client for voucher print - polls for transaction status until Success
+   * This endpoint is specifically for voucher printing where we need to wait for successful payment
+   */
+  @Post('collect-voucher-print')
+  async collectVoucherPrintFunds(@Body() dto: {
+    amount: number;
+    payer: string;
+    externalId?: string;
+    payerNote?: string;
+    payeeNote?: string;
+    currency?: string;
+    category?: string;
+    walletId: string;
+    transactionChargesCategory?: string;
+  }) {
+    const externalId = dto.externalId || `voucher-collect-${Date.now()}`;
+    
+    // Store reference in Redis for tracking
+    await this.redis.set(`transaction:${externalId}:type`, 'voucher-collection', 'EX', 86400);
+    await this.redis.set(`transaction:${externalId}:payer`, dto.payer, 'EX', 86400);
+    
+    const result = await this.iotecService.collectVoucherPrintFunds({
+      ...dto,
+      externalId,
+    });
+    
+    // Create transaction record
+    const transaction = new TransactionEntity();
+    transaction.reference = externalId;
+    transaction.phone = dto.payer;
+    transaction.amount = result.amount || dto.amount;
+    transaction.currency = result.currency || dto.currency || 'UGX';
+    transaction.paymentMethod = 'iotec-voucher-collection';
+    transaction.status = result.status || 'Pending';
+    transaction.metadata = {
+      ...dto,
+      result: result.result,
+      transactionId: result.transactionId,
+      statusCode: result.statusCode,
+      statusMessage: result.statusMessage,
+      // Charges
+      transactionCharge: result.transactionCharge,
+      vendorCharge: result.vendorCharge,
+      totalTransactionCharge: result.totalTransactionCharge,
+      // Vendor info
+      vendor: result.vendor,
+      vendorTransactionId: result.vendorTransactionId,
+      // Payee info
+      payee: result.payee,
+      payeeName: result.payeeName,
+      // Timestamps
+      createdAt: result.createdAt,
+      processedAt: result.processedAt,
+      lastUpdated: result.lastUpdated,
+    };
+    await this.transactionRepository.save(transaction);
+    
+    return result;
+  }
+
   //
   @Post('mobile-money')
   async mobileMoneyTransfer(@Body() dto: MobileMoneyTransferDto & {
