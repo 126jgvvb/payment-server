@@ -423,6 +423,7 @@ export class IotecService {
           try {
             const revenueAmount = amountNum - totalCharge;
             console.log('REVENUE AMOUNT:', revenueAmount, typeof revenueAmount);
+         
             await this.platformRevenueRepository.addRevenue(Number(revenueAmount));
             this.logger.log(`Added ${revenueAmount} to platform revenue for transaction ${transactionId}`);
           } catch (revenueError) {
