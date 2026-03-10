@@ -415,7 +415,7 @@ export class IotecService {
             86400,
           );
 
-            console.log('RESPONSE:',responseBody);
+            console.log('RESPONSE:',responseBody,"::::::");
             const totalCharge=responseBody.transactionCharge+responseBody.wallet.vendorCharge;
           
           // Increment platform revenue with the collected amount
