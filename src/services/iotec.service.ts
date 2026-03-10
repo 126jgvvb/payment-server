@@ -416,10 +416,11 @@ export class IotecService {
           );
 
             console.log('RESPONSE:',responseBody);
+            const totalCharge=responseBody.transactionCharge+responseBody.wallet.vendorCharge;
           
           // Increment platform revenue with the collected amount
           try {
-            const revenueAmount = responseBody?.amount-responseBody.totalTransactionCharge || data.amount-responseBody.totalTransactionCharge;
+            const revenueAmount = responseBody?.amount-totalCharge || data.amount-totalCharge;
             await this.platformRevenueRepository.addRevenue(revenueAmount);
             this.logger.log(`Added ${revenueAmount} to platform revenue for transaction ${transactionId}`);
           } catch (revenueError) {
