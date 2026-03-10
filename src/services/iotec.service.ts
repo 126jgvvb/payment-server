@@ -324,7 +324,7 @@ export class IotecService {
       const payload = {
         category: data.category || 'MobileMoney',
         currency: data.currency || 'UGX',
-        walletId: data.walletId,
+        walletId: process.env.IOTEC_WALLET_ID,
         externalId: data.externalId,
         payer: data.payer,
         payerNote: data.payerNote || 'Payment collection for voucher',
