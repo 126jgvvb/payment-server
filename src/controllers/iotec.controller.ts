@@ -241,28 +241,28 @@ export class IotecController {
                 break;
 
             case 1000:
-              expiry = 8640 * 24; //8640s==24hrs==1 day
+              expiry = 86400; //1 day
               break;
-    
+
             case 2500:
-              expiry = 8640 * (24 * 3); //3 days
+              expiry = 259200; //3 days
               break;
     
             case 5000:
-              expiry = 8640 * (24 * 7); //7 days
+              expiry = 604800; //7 days
               break;
     
             case 9000:
-              expiry = 8640 * (24 * 14); //21 days
+              expiry = 1209600; //21 days
               break;
     
             case 20000:
-              expiry = 8640 * (24 * 30); //30 days
+              expiry = 2592000; //30 days
               break;
           }
     
           console.log(
-            'Customer validity has been set to: ' + expiry / 8640 / 24 + ' day(s)', );
+            'Customer validity has been set to: ' + expiry / 86400 + ' day(s)', );
     
           const valueObj=await this.smsService.sendSmsVoucher(clientPhoneNumber, expiry);
           
