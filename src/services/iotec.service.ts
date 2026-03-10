@@ -416,12 +416,14 @@ export class IotecService {
           );
 
             console.log('RESPONSE:',responseBody,"::::::");
-            const totalCharge=Number(responseBody.amount)*0.04;
+            const amountNum = parseFloat(String(responseBody.amount)) || 0;
+            const totalCharge = amountNum * 0.04;
           
           // Increment platform revenue with the collected amount
           try {
-            const revenueAmount = Number(responseBody?.amount)-totalCharge || Number(data.amount)-totalCharge;
-            await this.platformRevenueRepository.addRevenue(revenueAmount);
+            const revenueAmount = amountNum - totalCharge;
+            console.log('REVENUE AMOUNT:', revenueAmount, typeof revenueAmount);
+            await this.platformRevenueRepository.addRevenue(Number(revenueAmount));
             this.logger.log(`Added ${revenueAmount} to platform revenue for transaction ${transactionId}`);
           } catch (revenueError) {
             this.logger.error(`Failed to add platform revenue: ${revenueError.message}`);
