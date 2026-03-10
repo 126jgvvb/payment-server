@@ -379,7 +379,7 @@ export class IotecService {
       this.logger.log(`Voucher collection initiated: ${reference} from ${data.payer}, transactionId: ${transactionId}`);
 
       // Poll for transaction status until Success
-      const maxAttempts = 30; // 30 attempts max (60 seconds with 2s interval)
+      const maxAttempts = 20; // 30 attempts max (60 seconds with 2s interval)
       const pollInterval = 2000; // 2 seconds between checks
       
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -409,6 +409,8 @@ export class IotecService {
             'EX',
             86400,
           );
+
+
           
           // Return successful response
           return {
