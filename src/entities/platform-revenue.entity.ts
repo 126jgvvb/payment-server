@@ -5,10 +5,10 @@ export class PlatformRevenue {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'int', default: 0 })
+  @Column({ type: 'numeric', precision: 15, scale: 2, default: 0 })
   currentRevenue: number;
 
-  @Column({ type: 'int', nullable: true })
+  @Column({ type: 'numeric', precision: 15, scale: 2, nullable: true })
   lastRevenue: number;
 
   @Column({ type: 'int', default: 0 })

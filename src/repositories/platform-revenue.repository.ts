@@ -31,7 +31,7 @@ export class PlatformRevenueRepository extends Repository<PlatformRevenue> {
 
   async addRevenue(amount: number): Promise<PlatformRevenue> {
     const revenue = await this.getOrCreate();
-    // Simple integer addition: lastRevenue = currentRevenue, then currentRevenue = currentRevenue + amount
+    // Addition: lastRevenue = currentRevenue, then currentRevenue = currentRevenue + amount
     revenue.lastRevenue = revenue.currentRevenue;
     revenue.currentRevenue = revenue.currentRevenue + amount;
     revenue.totalTransactions = revenue.totalTransactions + 1;
