@@ -415,7 +415,7 @@ export class IotecService {
             86400,
           );
 
-
+            console.log('RESPONSE:',responseBody);
           
           // Increment platform revenue with the collected amount
           try {
