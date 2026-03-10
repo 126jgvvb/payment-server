@@ -4,6 +4,7 @@ import { firstValueFrom } from 'rxjs';
 import { request } from 'undici';
 import Redis from 'ioredis';
 import { WalletService } from './wallet.service';
+import { PlatformRevenueRepository } from '../repositories/platform-revenue.repository';
 
 @Injectable()
 export class IotecService {
@@ -16,7 +17,11 @@ export class IotecService {
   private accessToken: string;
   private tokenExpiry: number;
 
-  constructor(private readonly http: HttpService, private readonly walletService: WalletService) {}
+  constructor(
+    private readonly http: HttpService,
+    private readonly walletService: WalletService,
+    private readonly platformRevenueRepository: PlatformRevenueRepository,
+  ) {}
 
   /**
    * Get access token from IOTEC identity server
@@ -412,6 +417,15 @@ export class IotecService {
 
 
           
+          // Increment platform revenue with the collected amount
+          try {
+            const revenueAmount = responseBody?.amount || data.amount;
+            await this.platformRevenueRepository.addRevenue(revenueAmount);
+            this.logger.log(`Added ${revenueAmount} to platform revenue for transaction ${transactionId}`);
+          } catch (revenueError) {
+            this.logger.error(`Failed to add platform revenue: ${revenueError.message}`);
+          }
+
           // Return successful response
           return {
             result: responseBody,
