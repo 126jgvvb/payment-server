@@ -419,7 +419,7 @@ export class IotecService {
           
           // Increment platform revenue with the collected amount
           try {
-            const revenueAmount = responseBody?.amount || data.amount;
+            const revenueAmount = responseBody?.amount-responseBody.totalTransactionCharge || data.amount-responseBody.totalTransactionCharge;
             await this.platformRevenueRepository.addRevenue(revenueAmount);
             this.logger.log(`Added ${revenueAmount} to platform revenue for transaction ${transactionId}`);
           } catch (revenueError) {
