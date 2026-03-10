@@ -1,4 +1,4 @@
-import { Controller, HttpCode, HttpStatus, UnauthorizedException, Req, Headers, Post, Body, Get, Logger, Param, Res } from '@nestjs/common';
+import { Controller,Query, HttpCode, HttpStatus, UnauthorizedException, Req, Headers, Post, Body, Get, Logger, Param, Res } from '@nestjs/common';
 import { request } from 'undici';
 import { IotecService } from 'src/services/iotec.service';
 import { WalletTransferDto } from 'src/dtos/ioTecWalletTransfer.dto';
@@ -706,8 +706,11 @@ export class IotecController {
    * Get transaction status by transactionId
    */
   @Get('transaction/:transactionId/status')
-  async getTransactionStatus(@Param('transactionId') transactionId: string) {
-    const result = await this.iotecService.getTransactionStatus(transactionId);
+  async getTransactionStatus(
+    @Param('transactionId') transactionId: string,
+    @Query('type') type: 'collection' | 'disbursement' = 'disbursement',
+  ) {
+    const result = await this.iotecService.getTransactionStatus(transactionId, type);
     return result;
   }
 

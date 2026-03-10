@@ -388,7 +388,7 @@ export class IotecService {
           await new Promise(resolve => setTimeout(resolve, pollInterval));
         }
         
-        const statusResult = await this.getTransactionStatus(transactionId);
+        const statusResult = await this.getTransactionStatus(transactionId, 'collection');
         const currentStatus = statusResult?.status;
         const currentStatusCode = statusResult?.statusCode;
         
@@ -461,7 +461,7 @@ export class IotecService {
       }
       
       // If we've reached max attempts without success, return the last known status
-      const lastStatus = await this.getTransactionStatus(transactionId);
+      const lastStatus = await this.getTransactionStatus(transactionId, 'collection');
       this.logger.warn(`Voucher collection polling timed out after ${maxAttempts} attempts for transaction ${transactionId}`);
       return {
         result: responseBody,
@@ -1062,13 +1062,20 @@ export class IotecService {
    * Get transaction status by transactionId
    * Uses undici for HTTP requests
    * Returns full transaction details
+   * @param transactionId - The transaction ID to check
+   * @param type - The type of transaction: 'collection' or 'disbursement' (defaults to 'disbursement')
    */
-  async getTransactionStatus(transactionId: string) {
+  async getTransactionStatus(transactionId: string, type: 'collection' | 'disbursement' = 'disbursement') {
     try {
       // Get valid access token
       const headers = await this.getHeaders();
 
-      const { statusCode, body } = await request(`https://pay.iotec.io/api/disbursements/status/${transactionId}`, {
+      // Use the appropriate endpoint based on transaction type
+      const endpoint = type === 'collection' 
+        ? `https://pay.iotec.io/api/collections/status/${transactionId}`
+        : `https://pay.iotec.io/api/disbursements/status/${transactionId}`;
+
+      const { statusCode, body } = await request(endpoint, {
         method: 'GET',
         headers: headers,
       });
