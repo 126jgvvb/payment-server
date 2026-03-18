@@ -671,11 +671,43 @@ export class IotecController {
     await this.redis.set(`transaction:${reference}:type`, 'admin-mobile-money', 'EX', 86400);
     
     // Perform mobile money transfer with net amount (after fee deduction)
-    const result = await this.iotecService.walletToMobileMoney({
-      ...dto,
-      amount: netAmount, // Transfer net amount after fee deduction
-      reference,
+    const externalId = dto.externalId || reference || `momo-${Date.now()}`;
+    
+    // Build the payload for the disbursements API
+    const payload = {
+      category: 'MobileMoney',
+      currency: dto.currency || 'ITX',
+      walletId: this.CURRENT_WALLET,
+      externalId: externalId,
+      payeeName: dto.payeeName || 'Customer',
+      payeeEmail: dto.payeeEmail || null,
+      payee: dto.payee,
+      amount: netAmount,
+      payerNote: dto.payerNote || '',
+      payeeNote: dto.payeeNote || '',
+      channel: null,
+      bankId: dto.bankId || null,
+      bankIdentificationCode: dto.bankIdentificationCode || null,
+      bankTransferType: dto.bankTransferType || 'InternalTransfer',
+      sendAt: dto.sendAt || new Date().toISOString(),
+    };
+    
+    // Get headers with valid access token
+    const headers = await this.iotecService.getHeaders();
+    
+    const { statusCode, body } = await request('https://pay.iotec.io/api/disbursements/disburse', {
+      method: 'POST',
+      headers: headers,
+      body: JSON.stringify(payload),
     });
+    
+    const responseBody = await body.json() as any;
+    
+    const result = {
+      ...responseBody,
+      status: responseBody.status || 'Pending',
+      transactionId: responseBody.id,
+    };
     
     // Create transaction record using the response structure
     const transaction = new TransactionEntity();

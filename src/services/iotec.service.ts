@@ -86,7 +86,7 @@ export class IotecService {
   /**
    * Get headers with valid access token
    */
-  private async getHeaders() {
+  async getHeaders() {
     const token = await this.getAccessToken();
     return {
       Authorization: `Bearer ${token}`,
