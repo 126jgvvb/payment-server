@@ -625,6 +625,99 @@ export class IotecController {
     return result;
   }
 
+  /**
+   * Admin mobile money transfer - performs mobile money transfer and decrements platform wallet
+   * after successful transaction. Includes UGX 600 fee deduction and minimum withdrawal of UGX 10,000
+   */
+  @Post('admin-mobile-money')
+  async adminMobileMoneyTransfer(@Body() dto: MobileMoneyTransferDto & {
+    externalId?: string;
+    payeeName?: string;
+    payeeEmail?: string;
+    payerNote?: string;
+    payeeNote?: string;
+    payee:string;
+    currency?: string;
+    bankId?: string;
+    bankIdentificationCode?: string;
+    bankTransferType?: string;
+    sendAt?: string;
+  }) {
+    const WITHDRAWAL_FEE = 600;
+    const MIN_WITHDRAWAL = 10000;
+    
+    const withdrawalAmount = Number(dto.amount);
+    
+    // Validate minimum withdrawal amount
+    if (withdrawalAmount < MIN_WITHDRAWAL) {
+      throw new Error(`Minimum withdrawal amount is UGX ${MIN_WITHDRAWAL.toLocaleString()}`);
+    }
+    
+    // Calculate net amount after fee deduction
+    const netAmount = withdrawalAmount - WITHDRAWAL_FEE;
+    // Note: The UGX 600 fee is retained by the platform (kept as platform income, not added to revenue tracking)
+    
+    // Store phone and reference in Redis for tracking
+    const reference = dto.reference || dto.externalId || `momo-${Date.now()}`;
+    if (dto.phoneNumber) {
+      await this.redis.set(`transaction:${reference}:phone`, dto.phoneNumber, 'EX', 86400);
+    }
+    await this.redis.set(`transaction:${reference}:type`, 'admin-mobile-money', 'EX', 86400);
+    
+    // Perform mobile money transfer with net amount (after fee deduction)
+    const result = await this.iotecService.walletToMobileMoney({
+      ...dto,
+      amount: netAmount, // Transfer net amount after fee deduction
+      reference,
+    });
+    
+    // Create transaction record using the response structure
+    const transaction = new TransactionEntity();
+    transaction.reference = reference;
+    transaction.phone = dto.phoneNumber;
+    transaction.amount = netAmount; // Record net amount
+    transaction.currency = result.currency || dto.currency || 'UGX';
+    transaction.paymentMethod = 'iotec-admin';
+    transaction.status = result.status || 'Pending';
+    transaction.metadata = { 
+      ...dto, 
+      originalAmount: withdrawalAmount,
+      feeDeducted: WITHDRAWAL_FEE,
+      netAmount: netAmount,
+      result: result.result,
+      transactionId: result.transactionId,
+      statusCode: result.statusCode,
+      statusMessage: result.statusMessage,
+      vendorTransactionId: result.vendorTransactionId,
+      approvalDecision: result.approvalDecision,
+      decisionRemarks: result.decisionRemarks,
+    };
+    await this.transactionRepository.save(transaction);
+    
+    this.logger.log(`Admin mobile money transfer saved: ${reference}, status: ${result.status}, transactionId: ${result.transactionId}, originalAmount: ${withdrawalAmount}, fee: ${WITHDRAWAL_FEE}, netAmount: ${netAmount}`);
+    
+    // If transaction was successful
+    if (result.status === 'Success') {
+      try {
+        // Decrement platform revenue by the net withdrawal amount (what was actually transferred)
+        // Note: The UGX 600 fee is retained by the platform (not added to revenue, just kept)
+        await this.platformRevenueRepository.addRevenue(-netAmount);
+        this.logger.log(`Decremented platform revenue by ${netAmount} for admin mobile money transfer ${reference}`);
+      } catch (error) {
+        this.logger.error(`Failed to update platform revenue: ${error.message}`);
+        // Don't fail the whole transaction if revenue update fails, just log the error
+      }
+    }
+    
+    // Return result with fee information
+    return {
+      ...result,
+      originalAmount: withdrawalAmount,
+      feeDeducted: WITHDRAWAL_FEE,
+      netAmount: netAmount,
+    };
+  }
+
   @Post('bank-transfer')
   async bankTransfer(@Body() dto: BankTransferDto) {
     // Store reference in Redis for tracking
