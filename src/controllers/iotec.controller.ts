@@ -653,6 +653,12 @@ export class IotecController {
       throw new Error(`Minimum withdrawal amount is UGX ${MIN_WITHDRAWAL.toLocaleString()}`);
     }
     
+    // Check if platform wallet has sufficient balance (must cover net amount + fee)
+    const currentPlatformBalance = await this.platformRevenueRepository.getCurrentRevenue();
+    if (currentPlatformBalance < withdrawalAmount) {
+      throw new Error(`Insufficient platform wallet balance. Current balance: UGX ${currentPlatformBalance.toLocaleString()}, Required: UGX ${withdrawalAmount.toLocaleString()}`);
+    }
+    
     // Calculate net amount after fee deduction
     const netAmount = withdrawalAmount - WITHDRAWAL_FEE;
     // Note: The UGX 600 fee is retained by the platform (kept as platform income, not added to revenue tracking)

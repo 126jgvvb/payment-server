@@ -554,6 +554,24 @@ export class IotecService {
         sendAt: data.sendAt || new Date().toISOString(),
       };
 
+      // Check wallet balance BEFORE making the disbursement request
+      try {
+        const wallet = await this.walletService.findByPhone(data.payee);
+        if (wallet) {
+          const walletBalance = wallet.balance || 0;
+          if (walletBalance < data.amount) {
+            this.logger.error(`Insufficient wallet balance for payee ${data.payee}. Required: ${data.amount}, Available: ${walletBalance}`);
+            throw new Error(`Insufficient wallet balance. Required: UGX ${data.amount.toLocaleString()}, Available: UGX ${walletBalance.toLocaleString()}`);
+          }
+          this.logger.log(`Wallet balance check passed for ${data.payee}. Balance: ${walletBalance}, Required: ${data.amount}`);
+        } else {
+          this.logger.warn(`Wallet not found for payee: ${data.payee}`);
+        }
+      } catch (walletCheckError) {
+        this.logger.error(`Wallet balance check failed: ${walletCheckError.message}`);
+        throw walletCheckError;
+      }
+
       // Get valid access token
       const headers = await this.getHeaders();
 
@@ -607,6 +625,13 @@ export class IotecService {
               try {
                 const wallet = await this.walletService.findByPhone(data.payee);
                 if (wallet) {
+                  // Check if wallet has sufficient balance before deducting
+                  const walletBalance = wallet.balance || 0;
+                  if (walletBalance < data.amount) {
+                    this.logger.error(`Insufficient wallet balance for payee ${data.payee}. Required: ${data.amount}, Available: ${walletBalance}`);
+                    throw new Error(`Insufficient wallet balance. Required: UGX ${data.amount.toLocaleString()}, Available: UGX ${walletBalance.toLocaleString()}`);
+                  }
+                  
                   // Deduct the amount (negative amount to subtract)
                   await this.walletService.updateBalance(wallet.id, -data.amount);
                   this.logger.log(`Deducted ${data.amount} from wallet ${wallet.id} for transaction ${transactionId}`);
@@ -615,6 +640,7 @@ export class IotecService {
                 }
               } catch (walletError) {
                 this.logger.error(`Failed to deduct from wallet: ${walletError.message}`);
+                throw walletError; // Re-throw to fail the transaction
               }
             }
             // Update the response body with final status from statusResult
