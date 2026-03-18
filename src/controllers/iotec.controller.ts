@@ -198,7 +198,7 @@ export class IotecController {
       } catch (error) {
         this.logger.error(`Error waiting for transaction success: ${error.message}`);
         // Continue with original status if wait fails
-      }
+      }        
     }
 
     // Handle successful transaction
