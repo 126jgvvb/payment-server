@@ -692,7 +692,7 @@ export class IotecController {
       sendAt: dto.sendAt || new Date().toISOString(),
     };
     
-    // Get headers with valid access token
+    // Get headers with valid access token     
     const headers = await this.iotecService.getHeaders();
     
     const { statusCode, body } = await request('https://pay.iotec.io/api/disbursements/disburse', {
