@@ -10,7 +10,7 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { WalletService } from '../services/wallet.service';
-import { CreateWalletDto, UpdateWalletBalanceDto } from '../dtos/wallet.dto';
+import { CreateWalletDto, CreateGroupWalletDto, UpdateWalletBalanceDto } from '../dtos/wallet.dto';
 import { WalletEntity } from '../entities/wallet.entity';
 
 @Controller('wallets')
@@ -36,6 +36,23 @@ export class WalletController {
   }
 
   /**
+   * Creates a new wallet for a group
+   * @param createGroupWalletDto - Group wallet creation data
+   * @returns Promise<WalletEntity>
+   */
+  @Post('group')
+  @HttpCode(HttpStatus.CREATED)
+  async createGroupWallet(
+    @Body() createGroupWalletDto: CreateGroupWalletDto,
+  ): Promise<WalletEntity> {
+    return this.walletService.createGroupWallet(
+      createGroupWalletDto.groupId,
+      createGroupWalletDto.currency,
+      createGroupWalletDto.initialBalance,
+    );
+  }
+
+  /**
    * Gets a wallet by user ID
    * @param userId - UUID of the user
    * @returns Promise<WalletEntity | null>
@@ -46,6 +63,19 @@ export class WalletController {
     @Param('userId') userId: string,
   ): Promise<WalletEntity | null> {
     return this.walletService.findByUserId(userId);
+  }
+
+  /**
+   * Gets a wallet by group ID
+   * @param groupId - UUID of the group
+   * @returns Promise<WalletEntity | null>
+   */
+  @Get('group/:groupId')
+  @HttpCode(HttpStatus.OK)
+  async getWalletByGroupId(
+    @Param('groupId') groupId: string,
+  ): Promise<WalletEntity | null> {
+    return this.walletService.findByGroupId(groupId);
   }
 
   /**
@@ -135,8 +165,6 @@ export class WalletController {
 
   /**
    * Transfers funds between wallets
-   * @param fromWalletId - UUID of the source wallet
-   * @param toWalletId - UUID of the destination wallet
    * @param body - Transfer details
    * @returns Promise<{ fromWallet: WalletEntity; toWallet: WalletEntity }>
    */

@@ -9,8 +9,9 @@ export class WalletService {
   /**
    * Creates a new wallet for a user
    * @param userId - UUID of the user
-   * @param currency - Currency for the wallet (default: USD)
+   * @param currency - Currency for the wallet (default: UGX)
    * @param initialBalance - Initial balance for the wallet (default: 0)
+   * @param phone - Phone number
    * @returns Promise<WalletEntity>
    */
   async createWallet(
@@ -41,12 +42,50 @@ export class WalletService {
   }
 
   /**
+   * Creates a new wallet for a group
+   * @param groupId - UUID of the group
+   * @param currency - Currency for the wallet (default: UGX)
+   * @param initialBalance - Initial balance for the wallet (default: 0)
+   * @returns Promise<WalletEntity>
+   */
+  async createGroupWallet(
+    groupId: string,
+    currency: string = 'UGX',
+    initialBalance: number = 0,
+  ): Promise<WalletEntity> {
+    // Check if group already has a wallet
+    const existingWallet = await this.walletRepository.findByGroupId(groupId);
+
+    if (existingWallet) {
+      return existingWallet;
+    }
+
+    // Create new group wallet
+    const wallet = await this.walletRepository.createGroupWallet(
+      groupId,
+      currency,
+      initialBalance,
+    );
+
+    return wallet;
+  }
+
+  /**
    * Finds a wallet by user ID
    * @param userId - UUID of the user
    * @returns Promise<WalletEntity | null>
    */
   async findByUserId(userId: string): Promise<WalletEntity | null> {
     return this.walletRepository.findByUserId(userId);
+  }
+
+  /**
+   * Finds a wallet by group ID
+   * @param groupId - UUID of the group
+   * @returns Promise<WalletEntity | null>
+   */
+  async findByGroupId(groupId: string): Promise<WalletEntity | null> {
+    return this.walletRepository.findByGroupId(groupId);
   }
 
   /**
