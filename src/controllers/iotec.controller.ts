@@ -592,12 +592,14 @@ export class IotecController {
       await this.redis.set(`transaction:${reference}:phone`, dto.phoneNumber, 'EX', 86400);
     }
     await this.redis.set(`transaction:${reference}:type`, 'mobile-money', 'EX', 86400);
-    
-    const result = await this.iotecService.walletToMobileMoney({
+
+    // Deduct the withdrawal charge, then initiate the disbursement.
+    const result = await this.iotecService.disburseWithCharge({
       ...dto,
       reference,
+      transactionType: 'mobile-money',
     });
-    
+
     // Create transaction record using the response structure
     // Statuses: Pending, SentToVendor, Success, Failed, AwaitingApproval, RolledBack, Scheduled, Cancelled, Rejected
     const transaction = new TransactionEntity();
@@ -607,8 +609,11 @@ export class IotecController {
     transaction.currency = result.currency || dto.currency || 'UGX';
     transaction.paymentMethod = 'iotec';
     transaction.status = result.status || 'Pending';
-    transaction.metadata = { 
-      ...dto, 
+    transaction.metadata = {
+      ...dto,
+      originalAmount: result.originalAmount,
+      chargeDeducted: result.chargeDeducted,
+      netAmount: result.netAmount,
       result: result.result,
       transactionId: result.transactionId,
       statusCode: result.statusCode,
@@ -619,15 +624,15 @@ export class IotecController {
       decisionRemarks: result.decisionRemarks,
     };
     await this.transactionRepository.save(transaction);
-    
-    this.logger.log(`Mobile money transfer saved: ${reference}, status: ${result.status}, transactionId: ${result.transactionId}`);
-    
+
+    this.logger.log(`Mobile money transfer saved: ${reference}, status: ${result.status}, transactionId: ${result.transactionId}, charge: ${result.chargeDeducted}, netAmount: ${result.netAmount}`);
+
     return result;
   }
 
   /**
    * Admin mobile money transfer - performs mobile money transfer and decrements platform wallet
-   * after successful transaction. Includes UGX 600 fee deduction and minimum withdrawal of UGX 10,000
+   * after successful transaction. Includes the tiered withdrawal charge and minimum withdrawal of UGX 10,000
    */
   @Post('admin-mobile-money')
   async adminMobileMoneyTransfer(@Body() dto: MobileMoneyTransferDto & {
@@ -643,85 +648,48 @@ export class IotecController {
     bankTransferType?: string;
     sendAt?: string;
   }) {
-    const WITHDRAWAL_FEE = 600;
     const MIN_WITHDRAWAL = 10000;
-    
+
     const withdrawalAmount = Number(dto.amount);
-    
+
     // Validate minimum withdrawal amount
     if (withdrawalAmount < MIN_WITHDRAWAL) {
       throw new Error(`Minimum withdrawal amount is UGX ${MIN_WITHDRAWAL.toLocaleString()}`);
     }
-    
-    // Check if platform wallet has sufficient balance (must cover net amount + fee)
-    const currentPlatformBalance = await this.platformRevenueRepository.getCurrentRevenue();
-    if (currentPlatformBalance < withdrawalAmount) {
-      throw new Error(`Insufficient platform wallet balance. Current balance: UGX ${currentPlatformBalance.toLocaleString()}, Required: UGX ${withdrawalAmount.toLocaleString()}`);
-    }
-    
-    // Calculate net amount after fee deduction
-    const netAmount = withdrawalAmount - WITHDRAWAL_FEE;
-    // Note: The UGX 600 fee is retained by the platform (kept as platform income, not added to revenue tracking)
-    
+
+    // NOTE: the platform balance check is deliberately NOT done here. The
+    // service in front of this one (admin service) knows the platform
+    // commission balance and rejects the request before it reaches us. The
+    // payee is never looked up as a wallet holder either — customers do not
+    // own wallets on the platform.
+
     // Store phone and reference in Redis for tracking
     const reference = dto.reference || dto.externalId || `momo-${Date.now()}`;
     if (dto.phoneNumber) {
       await this.redis.set(`transaction:${reference}:phone`, dto.phoneNumber, 'EX', 86400);
     }
     await this.redis.set(`transaction:${reference}:type`, 'admin-mobile-money', 'EX', 86400);
-    
-    // Perform mobile money transfer with net amount (after fee deduction)
-    const externalId = dto.externalId || reference || `momo-${Date.now()}`;
-    
-    // Build the payload for the disbursements API
-    const payload = {
-      category: 'MobileMoney',
-      currency: dto.currency || 'ITX',
-      walletId: this.CURRENT_WALLET,
-      externalId: externalId,
-      payeeName: dto.payeeName || 'Customer',
-      payeeEmail: dto.payeeEmail || null,
-      payee: dto.payee,
-      amount: netAmount,
-      payerNote: dto.payerNote || '',
-      payeeNote: dto.payeeNote || '',
-      channel: null,
-      bankId: dto.bankId || null,
-      bankIdentificationCode: dto.bankIdentificationCode || null,
-      bankTransferType: dto.bankTransferType || 'InternalTransfer',
-      sendAt: dto.sendAt || new Date().toISOString(),
-    };
-    
-    // Get headers with valid access token
-    const headers = await this.iotecService.getHeaders();
-    
-    const { statusCode, body } = await request('https://pay.iotec.io/api/disbursements/disburse', {
-      method: 'POST',
-      headers: headers,
-      body: JSON.stringify(payload),
+
+    // Deduct the withdrawal charge, then initiate the disbursement.
+    const result = await this.iotecService.disburseWithCharge({
+      ...dto,
+      reference,
+      transactionType: 'admin-mobile-money',
     });
-    
-    const responseBody = await body.json() as any;
-    
-    const result = {
-      ...responseBody,
-      status: responseBody.status || 'Pending',
-      transactionId: responseBody.id,
-    };
-    
+
     // Create transaction record using the response structure
     const transaction = new TransactionEntity();
     transaction.reference = reference;
     transaction.phone = dto.phoneNumber;
-    transaction.amount = netAmount; // Record net amount
+    transaction.amount = result.amount || dto.amount; // Record net amount
     transaction.currency = result.currency || dto.currency || 'UGX';
     transaction.paymentMethod = 'iotec-admin';
     transaction.status = result.status || 'Pending';
-    transaction.metadata = { 
-      ...dto, 
-      originalAmount: withdrawalAmount,
-      feeDeducted: WITHDRAWAL_FEE,
-      netAmount: netAmount,
+    transaction.metadata = {
+      ...dto,
+      originalAmount: result.originalAmount,
+      feeDeducted: result.chargeDeducted,
+      netAmount: result.netAmount,
       result: result.result,
       transactionId: result.transactionId,
       statusCode: result.statusCode,
@@ -731,28 +699,28 @@ export class IotecController {
       decisionRemarks: result.decisionRemarks,
     };
     await this.transactionRepository.save(transaction);
-    
-    this.logger.log(`Admin mobile money transfer saved: ${reference}, status: ${result.status}, transactionId: ${result.transactionId}, originalAmount: ${withdrawalAmount}, fee: ${WITHDRAWAL_FEE}, netAmount: ${netAmount}`);
-    
+
+    this.logger.log(`Admin mobile money transfer saved: ${reference}, status: ${result.status}, transactionId: ${result.transactionId}, originalAmount: ${result.originalAmount}, charge: ${result.chargeDeducted}, netAmount: ${result.netAmount}`);
+
     // If transaction was successful
     if (result.status === 'Success') {
       try {
         // Decrement platform revenue by the net withdrawal amount (what was actually transferred)
-        // Note: The UGX 600 fee is retained by the platform (not added to revenue, just kept)
-        await this.platformRevenueRepository.addRevenue(-netAmount);
-        this.logger.log(`Decremented platform revenue by ${netAmount} for admin mobile money transfer ${reference}`);
+        // Note: The withdrawal charge is retained by the platform (not added to revenue, just kept)
+        await this.platformRevenueRepository.addRevenue(-result.netAmount);
+        this.logger.log(`Decremented platform revenue by ${result.netAmount} for admin mobile money transfer ${reference}`);
       } catch (error) {
         this.logger.error(`Failed to update platform revenue: ${error.message}`);
         // Don't fail the whole transaction if revenue update fails, just log the error
       }
     }
-    
+
     // Return result with fee information
     return {
       ...result,
-      originalAmount: withdrawalAmount,
-      feeDeducted: WITHDRAWAL_FEE,
-      netAmount: netAmount,
+      originalAmount: result.originalAmount,
+      feeDeducted: result.chargeDeducted,
+      netAmount: result.netAmount,
     };
   }
 

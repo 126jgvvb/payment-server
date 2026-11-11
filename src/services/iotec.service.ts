@@ -505,6 +505,171 @@ export class IotecService {
   }
 
   /**
+   * Tiered withdrawal charge applied to every disbursement.
+   * Mirrors the schedule used by the platform payment service so a broker or
+   * admin withdrawal is charged consistently regardless of the entry point.
+   */
+  getWithdrawFee(amount: number): number {
+    if (amount >= 500 && amount <= 60000) return 700;
+    if (amount >= 60001 && amount <= 500000) return 1400;
+    if (amount >= 500001 && amount <= 1000000) return 2300;
+    if (amount >= 1000001 && amount <= 5000000) return 2800;
+    return 0;
+  }
+
+  /**
+   * Disburse funds to a mobile money number, deducting the withdrawal charge
+   * before the transfer is initiated.
+   *
+   * This is the single implementation shared by the `mobile-money` and
+   * `admin-mobile-money` controller endpoints.
+   *
+   * Notes:
+   * - The payee is NEVER looked up as a wallet holder. Customers on the
+   *   platform do not explicitly own wallets, so a payee wallet lookup says
+   *   nothing about whether the funds are available. Funding checks belong to
+   *   the calling service (broker held balance / admin platform balance).
+   * - The iotec gateway deducts its withdrawal charge on EVERY disbursement,
+   *   including refunds. The charge is taken off the top of the requested
+   *   amount, so the caller must request gross = net + charge for the payee
+   *   to receive the full amount it is owed.
+   * - The transaction row is saved after the disbursement has been initiated.
+   */
+  async disburseWithCharge(data: {
+    amount: number;
+    phoneNumber: string;
+    provider: 'MTN' | 'AIRTEL';
+    reference: string;
+    externalId?: string;
+    payeeName?: string;
+    payeeEmail?: string;
+    payerNote?: string;
+    payeeNote?: string;
+    payee: string;
+    currency?: string;
+    bankId?: string;
+    bankIdentificationCode?: string;
+    bankTransferType?: string;
+    sendAt?: string;
+    /** Transaction type recorded for tracking, e.g. 'mobile-money'. */
+    transactionType?: string;
+    /** Payment method recorded on the transaction row. */
+    paymentMethod?: string;
+  }) {
+    const grossAmount = Number(data.amount) || 0;
+    if (grossAmount <= 0) {
+      throw new HttpException('Amount must be greater than zero', HttpStatus.BAD_REQUEST);
+    }
+
+    const charge = this.getWithdrawFee(grossAmount);
+    const netAmount = grossAmount - charge;
+
+    if (netAmount <= 0) {
+      throw new HttpException(
+        `Amount UGX ${grossAmount.toLocaleString()} is too small to cover the UGX ${charge.toLocaleString()} withdrawal charge`,
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    const externalId = data.externalId || data.reference || `momo-${Date.now()}`;
+    const reference = data.reference || externalId;
+
+    // Store phone and reference in Redis for tracking
+    await this.redis.set(`transaction:${externalId}:phone`, data.phoneNumber, 'EX', 86400);
+    await this.redis.set(`transaction:${externalId}:type`, data.transactionType || 'mobile-money', 'EX', 86400);
+    await this.redis.set(`transaction:${externalId}:provider`, data.provider, 'EX', 86400);
+
+    // Build the payload for the disbursements API. The charge is withheld from
+    // the amount that actually reaches the payee.
+    const payload = {
+      category: 'MobileMoney',
+      currency: data.currency || 'ITX',
+      walletId: this.walletId,
+      externalId: externalId,
+      payeeName: data.payeeName || 'Customer',
+      payeeEmail: data.payeeEmail || null,
+      payee: data.payee,
+      amount: netAmount,
+      payerNote: data.payerNote || '',
+      payeeNote: data.payeeNote || '',
+      channel: null,
+      bankId: data.bankId || null,
+      bankIdentificationCode: data.bankIdentificationCode || null,
+      bankTransferType: data.bankTransferType || 'InternalTransfer',
+      sendAt: data.sendAt || new Date().toISOString(),
+    };
+
+    // Get valid access token
+    const headers = await this.getHeaders();
+
+    const { statusCode, body } = await request('https://pay.iotec.io/api/disbursements/disburse', {
+      method: 'POST',
+      headers: headers,
+      body: JSON.stringify(payload),
+    });
+
+    const responseBody = await body.json() as any;
+
+    if (statusCode >= 400) {
+      this.logger.error(`Disbursement failed with status ${statusCode}: ${JSON.stringify(responseBody)}`);
+      throw new HttpException(
+        responseBody || 'Disbursement request failed',
+        statusCode,
+      );
+    }
+
+    const transactionId = responseBody?.id;
+
+    // Poll for the terminal status so the caller knows whether the money
+    // actually moved before it commits any ledger changes.
+    let status = responseBody?.status || 'Pending';
+    let statusResult: any = responseBody;
+
+    if (transactionId) {
+      await this.redis.set(
+        `transaction:${transactionId}:status`,
+        status,
+        'EX',
+        86400,
+      );
+
+      const maxAttempts = 3;
+      const pollInterval = 3000;
+
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        if (attempt > 1) {
+          await new Promise(resolve => setTimeout(resolve, pollInterval));
+        }
+
+        statusResult = await this.getTransactionStatus(transactionId);
+        status = statusResult?.status || status;
+
+        this.logger.log(`Transaction ${transactionId} status check ${attempt}/${maxAttempts}: ${status}`);
+
+        if (status === 'Success' || status === 'Failed' || status === 'Completed' || status === 'Rejected') {
+          break;
+        }
+      }
+    }
+
+    this.logger.log(
+      `Disbursement with charge: reference=${reference} gross=${grossAmount} charge=${charge} net=${netAmount} status=${status} transactionId=${transactionId}`,
+    );
+
+    return {
+      ...responseBody,
+      ...statusResult,
+      status,
+      transactionId,
+      reference,
+      originalAmount: grossAmount,
+      chargeDeducted: charge,
+      netAmount,
+      amount: netAmount,
+    };
+  }
+
+  /**
    * Disburse funds to mobile money via IOTEC disbursements API
    * Uses undici for HTTP requests
    * Response structure includes: id, status, statusCode, statusMessage, transactions[], etc.
